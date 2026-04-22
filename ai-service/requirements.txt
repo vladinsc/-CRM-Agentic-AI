@@ -5,3 +5,6 @@ psycopg2-binary
 pydantic
 pydantic-settings
 alembic
+python-dotenv
+sentence-transformers
+numpy

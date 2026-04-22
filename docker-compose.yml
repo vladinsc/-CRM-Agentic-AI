@@ -25,6 +25,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    
     networks:
       - crm-network
     restart: unless-stopped
@@ -35,6 +36,9 @@ services:
       context: ./ai-service
       dockerfile: Dockerfile
     container_name: crm-ai-service
+    environment:
+      - DATABASE_URL=postgresql://crm_user:crm_password@db:5432/crm_db
+      - AI_SERVICE_URL=http://crm-ai-service:8000
     ports:
       - "8001:8000" 
     networks:
@@ -42,7 +46,7 @@ services:
     restart: unless-stopped
 
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: crm-postgres
     environment:
       POSTGRES_USER: crm_user
@@ -52,6 +56,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
     networks:
       - crm-network
     healthcheck:
@@ -60,6 +65,22 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+  minio:
+    image: minio/minio:latest
+    container_name: crm-minio
+    ports:
+      - "9000:9000" # Portul pentru API (aici se conecteaza Python)
+      - "9001:9001" # Portul pentru interfata web (sa vezi fisierele in browser)
+    environment:
+      - MINIO_ROOT_USER=admin_local
+      - MINIO_ROOT_PASSWORD=parola_secreta_123
+      - MINIO_BUCKET_NAME=client-emails
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data # Persistenta datelor MinIO
+    networks:
+      - crm-network
+
 
 networks:
   crm-network:
@@ -68,3 +89,4 @@ networks:
 
 volumes:
   postgres_data:
+  minio_data: 

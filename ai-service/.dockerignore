@@ -9,4 +9,4 @@ venv/
 .pytest_cache/
 .git
 Dockerfile
-.dockerignore
+.dockerignor
