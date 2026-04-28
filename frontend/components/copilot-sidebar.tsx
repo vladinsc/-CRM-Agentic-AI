@@ -189,9 +189,18 @@ export function CopilotSidebar({ lead, onClose }: CopilotSidebarProps) {
                     Winning Strategy
                   </span>
                 </div>
-                <p className="text-sm text-foreground leading-relaxed">
-                  {lead.winningArgument}
-                </p>
+                {lead.winningArgument ? (
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {lead.winningArgument}
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Sparkles className="size-4 shrink-0 text-primary/50" />
+                    <span>
+                      Research this lead first — the Co-pilot will generate a personalized winning argument.
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Signals breakdown */}
@@ -235,7 +244,11 @@ export function CopilotSidebar({ lead, onClose }: CopilotSidebarProps) {
                   </Badge>
                 </div>
                 <div className="text-sm text-foreground whitespace-pre-line leading-relaxed bg-secondary/30 rounded-md p-3 font-mono text-xs">
-                  {lead.draftMessage}
+                  {lead.draftMessage || (
+                    <span className="text-muted-foreground not-italic font-sans">
+                      No draft yet — research this lead to generate a personalized email.
+                    </span>
+                  )}
                 </div>
               </div>
 

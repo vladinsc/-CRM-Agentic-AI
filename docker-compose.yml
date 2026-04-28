@@ -22,8 +22,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # The database hostname is just the service name 'db'
       - DATABASE_URL=postgresql://crm_user:crm_password@db:5432/crm_db
+      - AI_SERVICE_URL=http://ai-service:8000
     depends_on:
       db:
         condition: service_healthy
@@ -31,7 +31,6 @@ services:
       - crm-network
     restart: unless-stopped
 
-  # 3. AI Service (FastAPI/Flask)
   ai-service:
     build:
       context: ./ai-service
@@ -39,6 +38,23 @@ services:
     container_name: crm-ai-service
     ports:
       - "8001:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      # Schimba modelul aici: llama3.2:3b (rapid) sau llama3.1:8b (mai bun)
+      - OLLAMA_MODEL=llama3.2:3b
+    depends_on:
+      - ollama
+    networks:
+      - crm-network
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    container_name: crm-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
     networks:
       - crm-network
     restart: unless-stopped
@@ -69,3 +85,4 @@ networks:
 
 volumes:
   postgres_data:
+  ollama_data:

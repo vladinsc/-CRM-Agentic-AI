@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   Clock,
   Brain,
+  RefreshCw,
 } from "lucide-react"
+import { api, type ActivityAPI } from "@/lib/api"
 
 interface Activity {
   id: string
@@ -31,64 +33,28 @@ const activityIcons = {
   insight: Brain,
 }
 
-const initialActivities: Activity[] = [
-  {
-    id: "1",
-    type: "research",
-    message: "Researched company profile",
-    leadName: "TechCorp SRL",
-    timestamp: new Date(Date.now() - 1000 * 60 * 2),
-    status: "completed",
-  },
-  {
-    id: "2",
-    type: "email",
-    message: "Drafted personalized email",
-    leadName: "Maria Ionescu",
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    status: "completed",
-  },
-  {
-    id: "3",
-    type: "analysis",
-    message: "Analyzed buying signals",
-    leadName: "Global Solutions",
-    timestamp: new Date(Date.now() - 1000 * 60 * 8),
-    status: "completed",
-  },
-  {
-    id: "4",
-    type: "insight",
-    message: "Identified decision maker",
-    leadName: "StartUp Innovation",
-    timestamp: new Date(Date.now() - 1000 * 60 * 12),
-    status: "completed",
-  },
-  {
-    id: "5",
-    type: "email",
-    message: "Prepared follow-up sequence",
-    leadName: "Digital Agency Pro",
-    timestamp: new Date(Date.now() - 1000 * 60 * 18),
-    status: "completed",
-  },
-]
+// Mapează action_type-uri din backend la tipuri din UI
+function normalizeType(type: string): Activity["type"] {
+  const map: Record<string, Activity["type"]> = {
+    research: "research",
+    email: "email",
+    analysis: "analysis",
+    call: "call",
+    insight: "insight",
+  }
+  return map[type] ?? "research"
+}
 
-const newActivityMessages = [
-  { type: "research" as const, message: "Scanning LinkedIn activity" },
-  { type: "email" as const, message: "Preparing email draft" },
-  { type: "analysis" as const, message: "Updating closing score" },
-  { type: "insight" as const, message: "Found new buying signal" },
-  { type: "research" as const, message: "Checking recent news" },
-]
-
-const leadNames = [
-  "Alexandru Pop",
-  "InnovateTech",
-  "CloudFirst SRL",
-  "Diana Radu",
-  "NextGen Solutions",
-]
+function fromAPI(a: ActivityAPI): Activity {
+  return {
+    id: String(a.id),
+    type: normalizeType(a.type),
+    message: a.message,
+    leadName: a.leadName,
+    timestamp: new Date(a.timestamp),
+    status: a.status as Activity["status"],
+  }
+}
 
 function formatTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
@@ -100,39 +66,28 @@ function formatTimeAgo(date: Date): string {
 }
 
 export function ActivityFeed() {
-  const [activities, setActivities] = useState<Activity[]>(initialActivities)
-  const [currentActivity, setCurrentActivity] = useState<Activity | null>(null)
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  const fetchActivities = useCallback(async () => {
+    try {
+      const data = await api.getActivity(10)
+      setActivities(data.map(fromAPI))
+      setError(false)
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    // Simulate real-time activity
-    const interval = setInterval(() => {
-      const randomActivity =
-        newActivityMessages[Math.floor(Math.random() * newActivityMessages.length)]
-      const randomLead = leadNames[Math.floor(Math.random() * leadNames.length)]
-
-      const newActivity: Activity = {
-        id: Date.now().toString(),
-        type: randomActivity.type,
-        message: randomActivity.message,
-        leadName: randomLead,
-        timestamp: new Date(),
-        status: "in-progress",
-      }
-
-      setCurrentActivity(newActivity)
-
-      // Complete after 2-3 seconds
-      setTimeout(() => {
-        setCurrentActivity(null)
-        setActivities((prev) => [
-          { ...newActivity, status: "completed" },
-          ...prev.slice(0, 9),
-        ])
-      }, 2000 + Math.random() * 1000)
-    }, 8000)
-
+    fetchActivities()
+    // Refresh la fiecare 30s pentru a prinde activități noi
+    const interval = setInterval(fetchActivities, 30_000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchActivities])
 
   return (
     <div className="flex h-full flex-col">
@@ -144,7 +99,14 @@ export function ActivityFeed() {
           <h2 className="text-sm font-semibold text-foreground">AI Activity</h2>
           <p className="text-xs text-muted-foreground">Working autonomously</p>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={fetchActivities}
+            className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
           <Badge variant="outline" className="border-primary/30 text-primary">
             <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-primary" />
             Live
@@ -154,31 +116,46 @@ export function ActivityFeed() {
 
       <ScrollArea className="flex-1">
         <div className="space-y-1 p-2">
-          {/* Current in-progress activity */}
-          {currentActivity && (
-            <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-start gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/20">
-                  <Clock className="size-4 text-primary animate-spin" style={{ animationDuration: "3s" }} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">
-                    {currentActivity.message}
-                  </p>
-                  {currentActivity.leadName && (
-                    <p className="mt-0.5 truncate text-xs text-primary">
-                      {currentActivity.leadName}
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground">Working...</p>
+          {loading && (
+            // Skeleton loader
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg p-3">
+                <div className="flex items-start gap-3">
+                  <div className="size-8 rounded-md bg-secondary animate-pulse" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-3/4 rounded bg-secondary animate-pulse" />
+                    <div className="h-2 w-1/2 rounded bg-secondary animate-pulse" />
+                  </div>
                 </div>
               </div>
+            ))
+          )}
+
+          {!loading && error && (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <p className="text-xs text-muted-foreground">
+                Could not load activity
+              </p>
+              <button
+                onClick={fetchActivities}
+                className="text-xs text-primary hover:underline"
+              >
+                Try again
+              </button>
             </div>
           )}
 
-          {/* Completed activities */}
-          {activities.map((activity, index) => {
-            const Icon = activityIcons[activity.type]
+          {!loading && !error && activities.length === 0 && (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <Clock className="size-8 text-muted-foreground/30" />
+              <p className="text-xs text-muted-foreground">
+                No activity yet — research a lead to get started
+              </p>
+            </div>
+          )}
+
+          {!loading && !error && activities.map((activity, index) => {
+            const Icon = activityIcons[activity.type] ?? Search
             return (
               <div
                 key={activity.id}

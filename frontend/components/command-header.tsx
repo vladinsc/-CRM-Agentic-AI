@@ -1,17 +1,71 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Cpu, Bell, Settings, ChevronDown, Plus, LogOut } from "lucide-react";
-import { api } from "@/lib/api";
-import { useAuth } from "@/hooks/useAuth";
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Cpu,
+  Bell,
+  Settings,
+  ChevronDown,
+  Plus,
+  Upload,
+  LogOut,
+  Github,
+  Keyboard,
+  Info,
+} from "lucide-react"
+import { api, type StatsAPI, type ActivityAPI } from "@/lib/api"
+import { useAuth } from "@/hooks/useAuth"
+import { AddLeadModal } from "@/components/add-lead-modal"
+import { ImportCsvModal } from "@/components/import-csv-modal"
 
-export function CommandHeader() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+interface CommandHeaderProps {
+  onLeadCreated?: () => void
+}
+
+export function CommandHeader({ onLeadCreated }: CommandHeaderProps) {
+  const router = useRouter()
+  const { user } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [bellOpen, setBellOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [notifications, setNotifications] = useState<ActivityAPI[]>([])
+  const [stats, setStats] = useState<StatsAPI | null>(null)
+
+  useEffect(() => {
+    api.getStats().then(setStats).catch(() => {})
+    const interval = setInterval(() => {
+      api.getStats().then(setStats).catch(() => {})
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  function handleBellOpen() {
+    setBellOpen((o) => !o)
+    setSettingsOpen(false)
+    setOpen(false)
+    // Fetch latest 5 activities as notifications
+    api.getActivity(5).then(setNotifications).catch(() => {})
+  }
+
+  function handleSettingsOpen() {
+    setSettingsOpen((o) => !o)
+    setBellOpen(false)
+    setOpen(false)
+  }
+
+  function formatTime(ts: string) {
+    const d = new Date(ts)
+    const diff = Math.floor((Date.now() - d.getTime()) / 1000)
+    if (diff < 60) return "just now"
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+    return d.toLocaleDateString()
+  }
 
   const initials = user?.full_name
     ? user.full_name
@@ -89,21 +143,29 @@ export function CommandHeader() {
         <div className="flex items-center gap-2">
           <div className="size-2 rounded-full bg-score-hot animate-pulse" />
           <span className="text-xs text-muted-foreground">
-            <span className="font-mono text-foreground">3</span> hot leads today
+            <span className="font-mono text-foreground">
+              {stats ? stats.hot_leads : "—"}
+            </span>{" "}
+            hot leads
           </span>
         </div>
         <div className="h-4 w-px bg-border" />
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            AI processed <span className="font-mono text-foreground">47</span>{" "}
-            actions
+            AI processed{" "}
+            <span className="font-mono text-foreground">
+              {stats ? stats.ai_actions_today : "—"}
+            </span>{" "}
+            actions today
           </span>
         </div>
         <div className="h-4 w-px bg-border" />
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            Pipeline value:{" "}
-            <span className="font-mono text-primary font-semibold">€237K</span>
+            Pipeline:{" "}
+            <span className="font-mono text-primary font-semibold">
+              {stats ? stats.pipeline_value : "—"}
+            </span>
           </span>
         </div>
       </div>
@@ -114,20 +176,100 @@ export function CommandHeader() {
           variant="outline"
           size="sm"
           className="hidden sm:flex gap-1.5"
-          onClick={handleAddLead}
+          onClick={() => setModalOpen(true)}
         >
           <Plus className="size-3.5" />
           Add Lead
         </Button>
-        <Button variant="ghost" size="icon-sm" className="relative">
-          <Bell className="size-4" />
-          <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-            3
-          </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="hidden sm:flex gap-1.5 text-muted-foreground"
+          onClick={() => setImportOpen(true)}
+        >
+          <Upload className="size-3.5" />
+          Import CSV
         </Button>
-        <Button variant="ghost" size="icon-sm">
-          <Settings className="size-4" />
-        </Button>
+        <AddLeadModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSuccess={() => onLeadCreated?.()}
+        />
+        <ImportCsvModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onSuccess={() => onLeadCreated?.()}
+        />
+        {/* Bell */}
+        <div className="relative">
+          <Button variant="ghost" size="icon-sm" className="relative" onClick={handleBellOpen}>
+            <Bell className="size-4" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                {notifications.length}
+              </span>
+            )}
+          </Button>
+          {bellOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setBellOpen(false)} />
+              <div className="absolute right-0 top-10 z-20 w-72 rounded-lg border border-border bg-card shadow-lg py-1">
+                <div className="px-3 py-2 border-b border-border">
+                  <p className="text-xs font-semibold text-foreground">Recent AI Activity</p>
+                </div>
+                {notifications.length === 0 ? (
+                  <p className="px-3 py-4 text-xs text-muted-foreground text-center">No activity yet</p>
+                ) : (
+                  notifications.map((n) => (
+                    <div key={n.id} className="px-3 py-2 hover:bg-accent transition-colors border-b border-border/50 last:border-0">
+                      <p className="text-xs text-foreground line-clamp-2">{n.message}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{n.leadName} · {formatTime(n.timestamp)}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Settings */}
+        <div className="relative">
+          <Button variant="ghost" size="icon-sm" onClick={handleSettingsOpen}>
+            <Settings className="size-4" />
+          </Button>
+          {settingsOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setSettingsOpen(false)} />
+              <div className="absolute right-0 top-10 z-20 w-48 rounded-lg border border-border bg-card shadow-lg py-1">
+                <div className="px-3 py-2 border-b border-border">
+                  <p className="text-xs font-semibold text-foreground">Settings</p>
+                </div>
+                <a
+                  href="http://localhost:8000/docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  <Info className="size-4" />
+                  API Docs
+                </a>
+                <a
+                  href="https://github.com/vladinsc/-CRM-Agentic-AI"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  <Github className="size-4" />
+                  GitHub
+                </a>
+                <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground border-t border-border/50">
+                  <Keyboard className="size-4" />
+                  <span className="text-xs">v0.1.0 — EPIC 5 complete</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div className="ml-2 h-6 w-px bg-border hidden sm:block" />
         <div className="relative">
           <Button

@@ -1,7 +1,4 @@
 fastapi
 uvicorn[standard]
-sqlalchemy
-psycopg2-binary
 pydantic
-pydantic-settings
-alembic
+openai

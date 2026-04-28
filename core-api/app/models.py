@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, func, Float, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, DateTime, Text, Numeric, ForeignKey, func
+from sqlalchemy.dialects.postgresql import JSONB
 from app.database import Base
 
 
@@ -12,8 +12,6 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="sales_rep", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    leads = relationship("Lead", back_populates="owner", cascade="all, delete-orphan")
-    activities = relationship("Activity", back_populates="user", cascade="all, delete-orphan")
 
 
 class Lead(Base):
@@ -22,24 +20,30 @@ class Lead(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     company = Column(String, nullable=False)
-    email = Column(String, nullable=False, index=True)
-    status = Column(String, default="cool", nullable=False)
-    intent_score = Column(Float, default=0.0, nullable=False)
-    deal_value = Column(Float, default=0.0, nullable=False)
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    owner = relationship("User", back_populates="leads")
-    activities = relationship("Activity", back_populates="lead", cascade="all, delete-orphan")
-
-
-class Activity(Base):
-    __tablename__ = "activities"
-
-    id = Column(Integer, primary_key=True, index=True)
-    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    action_type = Column(String, nullable=False)
-    description = Column(String, nullable=False)
+    role = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    deal_value = Column(Numeric(precision=10, scale=2), nullable=True)
+    currency = Column(String(10), default="EUR", nullable=False)
+    last_activity_description = Column(Text, nullable=True)
+    intent_score = Column(Integer, nullable=True)
+    last_researched_at = Column(DateTime(timezone=True), nullable=True)
+    signals = Column(JSONB, default=list, nullable=False)
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    status = Column(String, default="new", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    lead = relationship("Lead", back_populates="activities")
-    user = relationship("User", back_populates="activities")
+
+class AgentActivity(Base):
+    __tablename__ = "agent_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    lead_name = Column(String, nullable=False)
+    agent_name = Column(String, nullable=False)
+    # action_type: "research" | "email" | "analysis" | "call" | "insight" — extensible
+    action_type = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    payload = Column(JSONB, default=dict, nullable=False)
+    status = Column(String, default="completed", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

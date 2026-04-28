@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth"
 export default function AgenticCommandCenter() {
   const { loading } = useAuth()
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   if (loading) {
     return (
@@ -22,7 +23,7 @@ export default function AgenticCommandCenter() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <CommandHeader />
+      <CommandHeader onLeadCreated={() => setRefreshTrigger((n) => n + 1)} />
       
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Activity Feed */}
@@ -35,6 +36,7 @@ export default function AgenticCommandCenter() {
           <LeadPipeline
             selectedLead={selectedLead}
             onSelectLead={setSelectedLead}
+            refreshTrigger={refreshTrigger}
           />
         </main>
 
