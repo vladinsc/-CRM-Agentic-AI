@@ -12,6 +12,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="sales_rep", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    google_refresh_token = Column(String, nullable=True)
+
 
 
 class Lead(Base):

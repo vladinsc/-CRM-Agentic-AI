@@ -41,3 +41,6 @@ __pycache__/
 
 # TypeScript build cache
 frontend/tsconfig.tsbuildinfo
+
+secrets/
+core-api/secrets/

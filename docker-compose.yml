@@ -17,8 +17,10 @@ services:
       context: ./core-api
       dockerfile: Dockerfile
     container_name: crm-core-api
-    volumes: # <--- ADAUGĂ RÂNDUL ĂSTA
+    volumes: 
       - ./core-api:/app
+    env_file:
+      - ./core-api/.env
     ports:
       - "8000:8000"
     environment:
