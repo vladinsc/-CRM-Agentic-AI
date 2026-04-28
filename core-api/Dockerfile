@@ -24,8 +24,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiem codul (în dev, volumul va suprascrie asta, dar e bine pentru build-ul final)
 COPY . .
 
+<<<<<<< HEAD
 # Expunem portul FastAPI
 EXPOSE 8000
 
 # Pornim serverul cu --reload pentru Hot Reloading
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+=======
+RUN chmod +x entrypoint.sh
+
+EXPOSE 8000
+CMD ["./entrypoint.sh"]
+>>>>>>> 73ccae4c00259b4ca761854f4cd41ebed3de95ea

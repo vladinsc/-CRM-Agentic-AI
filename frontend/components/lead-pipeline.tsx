@@ -341,7 +341,7 @@ export function LeadPipeline({ selectedLead, onSelectLead, refreshTrigger }: Lea
           {/* Lead cards */}
           {!loading && !fetchError &&
             filteredLeads.map((lead) => {
-              const ScoreIcon = getScoreIcon(lead.status ?? lead.score)
+              const ScoreIcon = getScoreIcon(lead.score)
               const isSelected = selectedLead?.id === lead.id
               const isResearching = researchingId === lead.id
 
@@ -361,11 +361,11 @@ export function LeadPipeline({ selectedLead, onSelectLead, refreshTrigger }: Lea
                     <div
                       className={cn(
                         "flex size-10 shrink-0 items-center justify-center rounded-lg border",
-                        getScoreBg(lead.status ?? lead.score)
+                        getScoreBg(lead.score)
                       )}
                     >
                       <ScoreIcon
-                        className={cn("size-5", getScoreColor(lead.status ?? lead.score))}
+                        className={cn("size-5", getScoreColor(lead.score))}
                       />
                     </div>
 
@@ -380,7 +380,7 @@ export function LeadPipeline({ selectedLead, onSelectLead, refreshTrigger }: Lea
                             "font-mono text-sm font-bold",
                             lead.score === 0
                               ? "text-muted-foreground"
-                              : getScoreColor(lead.status ?? lead.score)
+                              : getScoreColor(lead.score)
                           )}
                         >
                           {lead.score === 0 ? "—" : `${lead.score}%`}

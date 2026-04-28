@@ -33,3 +33,11 @@ output.pptx
 /package.json
 /package-lock.json
 /node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# TypeScript build cache
+frontend/tsconfig.tsbuildinfo

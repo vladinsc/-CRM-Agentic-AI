@@ -44,6 +44,8 @@ cd -CRM-Agentic-AI
 docker compose up -d
 ```
 
+> Migrațiile bazei de date rulează automat la pornire.
+
 ### 4. Descarcă modelul AI (o singură dată, ~2GB)
 
 ```bash
@@ -52,13 +54,7 @@ docker exec crm-ollama ollama pull llama3.2:3b
 
 > **llama3.2:3b** — model local de la Meta, rulează complet pe mașina ta (fără cloud, fără costuri). Folosit de `LeadResearchAgent` pentru a extrage semnale de cumpărare dintr-un profil de lead și a calcula un scor de intenție 0–100.
 
-### 5. Rulează migrațiile bazei de date
-
-```bash
-docker compose exec -e PYTHONPATH=/app core-api alembic upgrade head
-```
-
-### 6. Accesează aplicația
+### 5. Accesează aplicația
 
 | Serviciu | URL |
 |---|---|
@@ -81,7 +77,7 @@ docker compose exec -e PYTHONPATH=/app core-api alembic upgrade head
 
 ## Stack
 
-- **Frontend:** Next.js 15 + React 19 + TypeScript + Tailwind
+- **Frontend:** Next.js 16 + React 19 + TypeScript + Tailwind
 - **Backend:** FastAPI + SQLAlchemy + PostgreSQL
 - **AI Service:** FastAPI + Ollama (llama3.2:3b)
 - **Infra:** Docker Compose
