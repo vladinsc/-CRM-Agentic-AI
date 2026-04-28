@@ -10,3 +10,6 @@ passlib[bcrypt]
 bcrypt==4.0.1
 python-multipart
 httpx
+google-api-python-client 
+google-auth-oauthlib 
+google-auth-httplib2
