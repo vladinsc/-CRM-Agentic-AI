@@ -8,13 +8,14 @@ from app.config import settings
 
 # SCOPES defineste exact ce are voie sa faca aplicatia ta in contul userului. 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+REDIRECT_URI = f"{settings.frontend_url}/api/auth/google/callback"
 
 def get_google_auth_url():
     """Genereaza link-ul pe care da click utilizatorul pentru a se loga cu Google."""
     flow = Flow.from_client_secrets_file(
         settings.google_secrets_path,
         scopes=SCOPES,
-        redirect_uri='http://localhost:8000/api/auth/google/callback'
+        redirect_uri=REDIRECT_URI
     )
     
     auth_url, state = flow.authorization_url(

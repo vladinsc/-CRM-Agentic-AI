@@ -8,7 +8,7 @@ from app.auth import get_current_user
 from app.config import settings
 
 router = APIRouter(prefix="/api/auth/google", tags=["Google Authentication"])
-
+REDIRECT_URI = f"{settings.frontend_url}/api/auth/google/callback"
 @router.get("/login")
 def google_login():
     """
@@ -33,7 +33,7 @@ def google_callback(
         flow = Flow.from_client_secrets_file(
             settings.google_secrets_path,
             scopes=SCOPES,
-            redirect_uri='http://localhost:8000/api/auth/google/callback'
+            redirect_uri=REDIRECT_URI
         )
         
         # Schimbam codul temporar primit de la Google pe token-uri reale de acces

@@ -106,8 +106,12 @@ export function CommandHeader({ onLeadCreated }: CommandHeaderProps) {
         email,
         company,
         intent_score: Number.isFinite(intent) ? intent : 0,
-        deal_value: Number.isFinite(deal) ? deal : 0,
+        deal_value: Number.isFinite(deal) ? deal : '0',
         status: status || undefined,
+        role: "",
+        phone: "",
+        currency: "USD",
+        last_activity_description: ""
       };
 
       await api.createLead(payload);

@@ -29,7 +29,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const data = await api.login(email, password);
+      const data = (await api.login(email, password)) as { access_token: string };
       try {
         localStorage.setItem("token", data.access_token);
       } catch {}

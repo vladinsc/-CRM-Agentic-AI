@@ -10,6 +10,13 @@ services:
       - core-api
     networks:
       - crm-network
+    #command: npm run dev
+    #volumes:
+      #- ./frontend:/app
+      # 3. Protejam modulele de Linux si cache-ul intern de suprascrierea de pe laptop
+      #- /app/node_modules
+      #- /app/.next
+    
     restart: unless-stopped
 
   core-api:
@@ -44,22 +51,22 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434/v1
       # Schimba modelul aici: llama3.2:3b (rapid) sau llama3.1:8b (mai bun)
       - OLLAMA_MODEL=llama3.2:3b
-    depends_on:
-      - ollama
+    #depends_on:
+    #  - ollama
     networks:
       - crm-network
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama
-    container_name: crm-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - crm-network
-    restart: unless-stopped
+  # ollama:
+  #   image: ollama/ollama
+  #   container_name: crm-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   networks:
+  #     - crm-network
+  #   restart: unless-stopped
 
   db:
     image: postgres:15-alpine
@@ -87,4 +94,5 @@ networks:
 
 volumes:
   postgres_data:
-  ollama_data:
+  # ollama_data:
+  # frontend:
