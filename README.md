@@ -158,7 +158,31 @@ graph TD
     API --> Gmail[Gmail API]
 ```
 
-### 2. Class Diagram (Data Models)
+### 2. CI/CD Pipeline
+```mermaid
+graph TD
+    Start([Push / PR to main]) --> Lint[Code Quality: Ruff]
+    
+    Lint --> TestCore[Test Core API]
+    Lint --> TestAI[Test AI Service]
+    Lint --> TestFE[Build Check Frontend]
+
+    TestCore --> BuildCheck{On main branch?}
+    TestAI --> BuildCheck
+    TestFE --> BuildCheck
+
+    BuildCheck -- Yes --> Push[Publish to GHCR]
+    BuildCheck -- No --> End([End Pipeline])
+
+    subgraph "GHCR Images"
+        Push --> ImageFE[crm-frontend]
+        Push --> ImageCore[crm-core-api]
+        Push --> ImageAI[crm-ai-service]
+        Push --> ImageScraper[crm-scraper]
+    end
+```
+
+### 3. Class Diagram (Data Models)
 ```mermaid
 classDiagram
     class User {
