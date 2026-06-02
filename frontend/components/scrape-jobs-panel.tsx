@@ -120,9 +120,9 @@ export function ScrapeJobsPanel({ refreshTrigger }: ScrapeJobsPanelProps) {
                 </div>
               </div>
               <div className="text-[11px] text-muted-foreground">
-                {job.scraped_count} scraped · <span className="text-green-400">{job.leads_created} matched ICP</span>
+                {job.scraped_count} scraped · <span className="text-green-400">{job.leads_created} added to pipeline</span>
                 {job.scraped_count > job.leads_created && (
-                  <> · {job.scraped_count - job.leads_created} skipped</>
+                  <> · {job.scraped_count - job.leads_created} not added (duplicate or off-ICP)</>
                 )}
               </div>
               {job.status === "failed" && job.error_message && (

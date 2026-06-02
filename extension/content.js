@@ -61,13 +61,61 @@ function extractLeadsFromPage() {
     .filter((l) => l.name);
 }
 
-async function scrollToBottom() {
-  // Sales Nav lazy-loads result cards as you scroll; nudge the list to render all.
-  for (let i = 0; i < 6; i++) {
-    window.scrollBy(0, document.body.scrollHeight / 6);
-    await SLEEP(rand(400, 800));
+function countCards() {
+  const sels = [
+    '[data-view-name="search-results-lead-result-item"]',
+    ".search-results__result-item",
+    "li.artdeco-list__item",
+  ];
+  for (const sel of sels) {
+    const n = document.querySelectorAll(sel).length;
+    if (n > 0) return n;
   }
-  window.scrollTo(0, 0);
+  return 0;
+}
+
+// Find the actual scrollable results container. Sales Nav renders results in an
+// INNER scroll region, not the window — scrolling window alone loads nothing.
+function findScrollContainer() {
+  const firstCard =
+    document.querySelector('[data-view-name="search-results-lead-result-item"]') ||
+    document.querySelector(".search-results__result-item") ||
+    document.querySelector("li.artdeco-list__item");
+  let el = firstCard ? firstCard.parentElement : null;
+  while (el && el !== document.body) {
+    const style = getComputedStyle(el);
+    if (
+      (style.overflowY === "auto" || style.overflowY === "scroll") &&
+      el.scrollHeight > el.clientHeight + 50
+    ) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+// Sales Nav lazy-loads/virtualizes cards as the inner list scrolls. Scroll it
+// step by step until the card count stops growing (all ~25 rendered).
+async function scrollToBottom() {
+  const container = findScrollContainer();
+  const scrollEl = container || document.scrollingElement || document.documentElement;
+
+  let lastCount = -1;
+  let stable = 0;
+  for (let i = 0; i < 30 && stable < 3; i++) {
+    scrollEl.scrollBy(0, Math.max(600, scrollEl.clientHeight * 0.8));
+    await SLEEP(rand(500, 900));
+    const count = countCards();
+    if (count === lastCount) {
+      stable++;
+    } else {
+      stable = 0;
+      lastCount = count;
+    }
+  }
+  // Back to top so pagination/Next is reachable and the page looks normal.
+  scrollEl.scrollTo({ top: 0 });
   await SLEEP(rand(500, 900));
 }
 
