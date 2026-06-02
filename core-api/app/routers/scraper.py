@@ -75,7 +75,7 @@ def _get_active_icp_inputs(db: Session, user_id: int) -> Optional[dict]:
     """Return the user's active ICP raw_inputs dict, or None if they have none."""
     icp = db.query(ICPBlueprint).filter(
         ICPBlueprint.user_id == user_id,
-        ICPBlueprint.is_active == True,
+        ICPBlueprint.is_active.is_(True),
     ).first()
     return icp.raw_inputs if icp else None
 
