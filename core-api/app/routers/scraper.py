@@ -420,7 +420,10 @@ def suggest_search_queries(
     ]
 
     try:
-        with httpx.Client(timeout=60.0) as client:
+        # The SearchQueryAgent loops over multiple tool-calling iterations on a
+        # small local model; a single run can take ~50-90s, and it may queue
+        # behind other agents on the shared Ollama lock. Allow generous time.
+        with httpx.Client(timeout=180.0) as client:
             resp = client.post(
                 f"{AI_SERVICE_URL}/agent/search-queries",
                 json={"leads": leads_payload},
