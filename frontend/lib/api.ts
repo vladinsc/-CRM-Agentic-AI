@@ -64,7 +64,7 @@ export interface CopilotAPI {
 
 export interface ScrapeJobAPI {
   id: number
-  status: "pending" | "running" | "completed" | "failed"
+  status: "pending" | "running" | "completed" | "failed" | "cancelled"
   query: string
   pages_requested: number
   scraped_count: number
@@ -137,6 +137,11 @@ export const api = {
 
   listScrapeJobs: () =>
     request<ScrapeJobAPI[]>("/scraper/jobs"),
+
+  cancelScrapeJob: (jobId: number) =>
+    request<{ ok: boolean; status: string }>(`/scraper/ext/jobs/${jobId}/cancel`, {
+      method: "POST",
+    }),
 
   suggestSearchQueries: () =>
     request<SearchQueryResponse>("/scraper/suggest-queries", { method: "POST" }),

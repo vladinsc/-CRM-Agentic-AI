@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Loader2, CheckCircle2, XCircle, Search, RefreshCw } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle, Search, RefreshCw, Ban } from "lucide-react"
+import { toast } from "sonner"
 import { api, type ScrapeJobAPI } from "@/lib/api"
 
 interface ScrapeJobsPanelProps {
@@ -18,6 +19,8 @@ function statusMeta(status: ScrapeJobAPI["status"]) {
       return { label: "Completed", cls: "text-green-400", icon: CheckCircle2, spin: false }
     case "failed":
       return { label: "Failed", cls: "text-red-400", icon: XCircle, spin: false }
+    case "cancelled":
+      return { label: "Cancelled", cls: "text-muted-foreground", icon: Ban, spin: false }
     default:
       return { label: status, cls: "text-muted-foreground", icon: Search, spin: false }
   }
@@ -52,6 +55,17 @@ export function ScrapeJobsPanel({ refreshTrigger }: ScrapeJobsPanelProps) {
       setLoaded(true)
     }
   }, [])
+
+  const cancelJob = useCallback(async (jobId: number) => {
+    try {
+      await api.cancelScrapeJob(jobId)
+      toast.info("Scrape cancelled", { description: "Leads found so far are kept." })
+      fetchJobs()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to cancel"
+      toast.error("Couldn't cancel", { description: msg })
+    }
+  }, [fetchJobs])
 
   // Poll while any job is active, otherwise just refresh occasionally.
   useEffect(() => {
@@ -89,10 +103,21 @@ export function ScrapeJobsPanel({ refreshTrigger }: ScrapeJobsPanelProps) {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium truncate">{queryLabel(job.query)}</span>
-                <span className={`flex items-center gap-1 text-[11px] font-medium shrink-0 ${m.cls}`}>
-                  <Icon className={`size-3 ${m.spin ? "animate-spin" : ""}`} />
-                  {m.label}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`flex items-center gap-1 text-[11px] font-medium ${m.cls}`}>
+                    <Icon className={`size-3 ${m.spin ? "animate-spin" : ""}`} />
+                    {m.label}
+                  </span>
+                  {(job.status === "running" || job.status === "pending") && (
+                    <button
+                      onClick={() => cancelJob(job.id)}
+                      title="Cancel scrape"
+                      className="text-muted-foreground hover:text-red-400 transition-colors"
+                    >
+                      <Ban className="size-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="text-[11px] text-muted-foreground">
                 {job.scraped_count} scraped · <span className="text-green-400">{job.leads_created} matched ICP</span>

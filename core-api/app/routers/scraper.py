@@ -2,7 +2,7 @@ import os
 import logging
 import threading
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import httpx
@@ -191,6 +191,13 @@ def _process_scraped_leads(lead_ids: list[int], user_id: int, job_id: int) -> No
     try:
         icp_inputs = _get_active_icp_inputs(db, user_id)
         for lead_id in lead_ids:
+            # Honor cancellation: if the job was cancelled (or deleted), stop and
+            # leave the remaining leads as 'pending_icp' (already saved).
+            job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+            if not job or job.status in ("cancelled", "failed"):
+                logger.info(f"Job {job_id} cancelled/gone — stopping lead processing.")
+                break
+
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if not lead:
                 continue
@@ -208,8 +215,7 @@ def _process_scraped_leads(lead_ids: list[int], user_id: int, job_id: int) -> No
                     (lead.last_activity_description or "") + f" · ICP mismatch: {match['reasoning']}"
                 )
 
-            job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
-            if job and is_match:
+            if is_match:
                 job.leads_created = (job.leads_created or 0) + 1
             db.commit()
 
@@ -224,12 +230,40 @@ def _process_scraped_leads(lead_ids: list[int], user_id: int, job_id: int) -> No
 
 # ── Scrape job endpoints (read-only; jobs are created via /ext/jobs) ──────────
 
+# A 'running' job with no progress for this long is considered orphaned (the
+# extension tab/popup likely closed without finalizing) and auto-expired.
+STALE_JOB_MINUTES = 10
+
+
+def _expire_stale_jobs(db: Session, user_id: int) -> None:
+    """Mark long-running jobs with no recent activity as failed (timed out)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_JOB_MINUTES)
+    stale = (
+        db.query(ScrapeJob)
+        .filter(
+            ScrapeJob.user_id == user_id,
+            ScrapeJob.status.in_(["running", "pending"]),
+            ScrapeJob.started_at.isnot(None),
+            ScrapeJob.started_at < cutoff,
+        )
+        .all()
+    )
+    if not stale:
+        return
+    for job in stale:
+        job.status = "failed"
+        job.error_message = "Timed out — the scrape did not finish (tab closed?)."
+        job.completed_at = datetime.now(timezone.utc)
+    db.commit()
+
+
 @router.get("/jobs", response_model=list[ScrapeJobResponse])
 def list_scrape_jobs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List scrape jobs for the current user (most recent first)."""
+    _expire_stale_jobs(db, current_user.id)
     jobs = (
         db.query(ScrapeJob)
         .filter(ScrapeJob.user_id == current_user.id)
@@ -287,6 +321,7 @@ def create_ext_job(
         status="running",
         scraped_count=0,
         leads_created=0,
+        started_at=datetime.now(timezone.utc),
     )
     db.add(job)
     db.commit()
@@ -332,6 +367,30 @@ def update_ext_job(
 
     db.commit()
     return {"ok": True}
+
+
+@router.post("/ext/jobs/{job_id}/cancel")
+def cancel_ext_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user_flexible),
+    db: Session = Depends(get_db),
+):
+    """
+    Cancel a running scrape job. Marks it 'cancelled'; the background ICP-matching
+    worker checks this status each iteration and stops, keeping leads found so far.
+    """
+    job = db.query(ScrapeJob).filter(
+        ScrapeJob.id == job_id,
+        ScrapeJob.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status in ("running", "pending"):
+        job.status = "cancelled"
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+    return {"ok": True, "status": job.status}
 
 
 # ── AI search query suggestions ───────────────────────────────────────────────
