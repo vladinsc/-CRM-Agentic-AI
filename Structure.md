@@ -35,7 +35,7 @@ The system follows a microservices-inspired architecture:
 - `google_auth.py`: OAuth2 flow for Google/Gmail.
 - `leads.py`: CRUD operations for leads and trigger for `ResearchAgent`.
 - `copilot.py`: Orchestrates calls to `CopilotAgent` and Gmail sending.
-- `scraper.py`: Manages LinkedIn scraping jobs and interactions with `scraper-service`.
+- `scraper.py`: Receives LinkedIn leads scraped by the browser extension (`/scraper/ext/*`), gates them against the user's active ICP, and exposes job history + AI query suggestions.
 - `gmail_watcher.py`: Webhook receiver for Google Pub/Sub notifications.
 - `icp.py`: Management of Ideal Customer Profile blueprints.
 
@@ -114,14 +114,13 @@ Handles the complexity of interacting with LinkedIn using browser automation.
 5. **Core API**: Persists result in `CopilotResult`, logs `AgentActivity`.
 6. **Core API**: Returns insights to Frontend.
 
-### 6.3 LinkedIn Scraping Flow
-1. **Frontend**: Submits search query and page count to `POST /scraper/jobs`.
-2. **Core API**: Creates `ScrapeJob` in DB (pending).
-3. **Core API**: Calls `POST scraper-service:8002/jobs` (async).
-4. **Scraper Service**: Launches Playwright, scrapes profiles.
-5. **Scraper Service**: Streams batches of leads back to `POST core-api:8000/scraper/jobs/{id}/leads`.
-6. **Core API**: Dedupes and saves leads to DB.
-7. **Scraper Service**: Updates job status to `completed` via `PATCH`.
+### 6.3 LinkedIn Scraping Flow (browser extension, BYO LinkedIn)
+1. **Extension**: User opens a LinkedIn Sales Navigator search (or pastes a search URL for autonomous mode). Scraping runs in the user's own logged-in tab, so LinkedIn only sees the real browser session.
+2. **Extension**: Reads the app's `access_token` cookie via `chrome.cookies` and calls `POST /scraper/ext/jobs` to create a `ScrapeJob`. Core API blocks this if the user has no active ICP.
+3. **Extension**: Extracts leads per page (name, role, company, location, profile + company URL) and streams batches to `POST /scraper/ext/jobs/{id}/leads`.
+4. **Core API**: Dedupes, then gates each lead against the active ICP via `POST ai-service/agent/icp-match` — matches become `status="new"` and trigger research; non-matches are saved as `status="rejected_icp"`.
+5. **Core API (research)**: For matched leads, fetches the company website text and feeds it to `ResearchAgent` for intent scoring.
+6. **Extension**: Finalizes the job via `PATCH /scraper/ext/jobs/{id}` and reports matched/rejected counts.
 
 ### 6.4 Gmail Integration Flow
 1. **Google Pub/Sub**: Sends push notification to `core-api/gmail/webhook`.

@@ -31,6 +31,11 @@ def _build_prompt(lead: dict) -> str:
         v = lead.get(key)
         return str(v) if v is not None else fallback
 
+    website = (lead.get("website_text") or "").strip()
+    website_block = (
+        f"- Company website excerpt: {website[:2000]}\n" if website else ""
+    )
+
     return (
         "You are a sales analyst. Analyze the lead below and respond with ONLY a JSON object.\n\n"
         f"Lead:\n"
@@ -38,8 +43,9 @@ def _build_prompt(lead: dict) -> str:
         f"- Company: {_val('company')}\n"
         f"- Role: {_val('role')}\n"
         f"- Deal value: {_val('deal_value_display')}\n"
-        f"- Last activity: {_val('last_activity_description', 'unknown')}\n\n"
-        "Respond with ONLY this JSON (no markdown, no explanation, no extra text):\n"
+        f"- Last activity: {_val('last_activity_description', 'unknown')}\n"
+        f"{website_block}"
+        "\nRespond with ONLY this JSON (no markdown, no explanation, no extra text):\n"
         "{\n"
         '  "signals": ["signal1", "signal2"],\n'
         '  "intent_score": 75,\n'

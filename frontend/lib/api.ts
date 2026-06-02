@@ -129,25 +129,9 @@ export const api = {
 
   sendCopilotEmail: (leadId: number) =>
     request<{ message: string; to: string }>(`/leads/${leadId}/copilot/send-email`, { method: "POST" }),
-  // ── LinkedIn Scraper ───────────────────────────────────────────────────────
-  uploadLinkedInCookies: (cookiesJson: string) =>
-    request<{ status: string }>("/scraper/credentials", {
-      method: "POST",
-      body: JSON.stringify({ cookies_json: cookiesJson }),
-    }),
-
-  getLinkedInCredentialStatus: () =>
-    request<{ has_credentials: boolean }>("/scraper/credentials/status"),
-
-  deleteLinkedInCredentials: () =>
-    request<void>("/scraper/credentials", { method: "DELETE" }),
-
-  startScrapeJob: (query: string, pages: number) =>
-    request<ScrapeJobAPI>("/scraper/jobs", {
-      method: "POST",
-      body: JSON.stringify({ query, pages }),
-    }),
-
+  // ── LinkedIn Scraper (browser-extension based) ───────────────────────────────
+  // Scrape jobs are created/ingested by the browser extension via /scraper/ext/*.
+  // These read-only endpoints expose job history to the web app.
   getScrapeJob: (jobId: number) =>
     request<ScrapeJobAPI>(`/scraper/jobs/${jobId}`),
 

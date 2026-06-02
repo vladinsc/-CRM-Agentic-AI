@@ -59,36 +59,25 @@ async function ensureContentScript(tabId) {
   }
 }
 
-// Orchestrates a full scrape and reports progress back to the popup.
-async function runScrape({ tabId, query, maxPages }, onProgress) {
-  const token = await getAuthToken();
-  if (!token) {
-    throw new Error("Not logged in. Open the CRM web app and log in first.");
-  }
-
-  await ensureContentScript(tabId);
-
-  const job = await apiFetch("/scraper/ext/jobs", {
-    method: "POST",
-    body: { query },
-    token,
-  });
-
-  let totalAccepted = 0;
+// Drives the page-by-page scrape of an already-prepared tab into an existing job.
+async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
+  let totalMatched = 0;
+  let totalRejected = 0;
   for (let page = 1; page <= maxPages; page++) {
     const pageResp = await sendToTab(tabId, { type: "SCRAPE_CURRENT_PAGE" });
     const leads = (pageResp && pageResp.leads) || [];
 
     if (leads.length > 0) {
-      const result = await apiFetch(`/scraper/ext/jobs/${job.id}/leads`, {
+      const result = await apiFetch(`/scraper/ext/jobs/${jobId}/leads`, {
         method: "POST",
         body: { leads },
         token,
       });
-      totalAccepted += result.accepted || 0;
+      totalMatched += result.matched ?? result.accepted ?? 0;
+      totalRejected += result.rejected ?? 0;
     }
 
-    onProgress({ page, totalAccepted, lastBatch: leads.length });
+    onProgress({ page, totalMatched, totalRejected, lastBatch: leads.length });
 
     if (page < maxPages) {
       const nav = await sendToTab(tabId, { type: "GO_NEXT_PAGE" });
@@ -96,27 +85,94 @@ async function runScrape({ tabId, query, maxPages }, onProgress) {
     }
   }
 
-  await apiFetch(`/scraper/ext/jobs/${job.id}`, {
+  await apiFetch(`/scraper/ext/jobs/${jobId}`, {
     method: "PATCH",
     body: { status: "completed" },
     token,
   });
 
-  return { jobId: job.id, totalAccepted };
+  return { jobId, totalMatched, totalRejected };
+}
+
+// Phase 1: scrape the tab the user is already viewing.
+async function runScrape({ tabId, query, maxPages }, onProgress) {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error("Not logged in. Open the CRM web app and log in first.");
+  }
+  // Create the job first so an ICP block (400) surfaces before we touch the page.
+  const job = await apiFetch("/scraper/ext/jobs", {
+    method: "POST",
+    body: { query },
+    token,
+  });
+  await ensureContentScript(tabId);
+  return scrapeTabIntoJob({ tabId, jobId: job.id, maxPages, token }, onProgress);
+}
+
+// Phase 2: open a pasted Sales Nav URL in a background tab, scrape it, close it.
+async function runAutoScrape({ url, maxPages }, onProgress) {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error("Not logged in. Open the CRM web app and log in first.");
+  }
+  // Create the job first — if no active ICP, this 400s before opening any tab.
+  const job = await apiFetch("/scraper/ext/jobs", {
+    method: "POST",
+    body: { query: url },
+    token,
+  });
+
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    await waitForTabComplete(tab.id);
+    await ensureContentScript(tab.id);
+    return await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
+  } finally {
+    try { await chrome.tabs.remove(tab.id); } catch {}
+  }
+}
+
+function waitForTabComplete(tabId, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error("Sales Navigator page took too long to load."));
+    }, timeoutMs);
+    function listener(updatedTabId, info) {
+      if (updatedTabId === tabId && info.status === "complete") {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(listener);
+        // small settle delay for SPA content
+        setTimeout(resolve, 2500);
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  const progress = (p) => chrome.runtime.sendMessage({ type: "SCRAPE_PROGRESS", progress: p });
+
   if (msg.type === "START_SCRAPE") {
     (async () => {
       try {
-        const result = await runScrape(msg.payload, (progress) => {
-          chrome.runtime.sendMessage({ type: "SCRAPE_PROGRESS", progress });
-        });
-        sendResponse({ ok: true, result });
+        sendResponse({ ok: true, result: await runScrape(msg.payload, progress) });
       } catch (err) {
         sendResponse({ ok: false, error: err.message });
       }
     })();
-    return true; // async
+    return true;
+  }
+
+  if (msg.type === "START_AUTO_SCRAPE") {
+    (async () => {
+      try {
+        sendResponse({ ok: true, result: await runAutoScrape(msg.payload, progress) });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
   }
 });

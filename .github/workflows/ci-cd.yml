@@ -170,12 +170,3 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/crm-ai-service:latest
             ghcr.io/${{ github.repository_owner }}/crm-ai-service:${{ github.sha }}
-
-      - name: Build and push Scraper Service
-        uses: docker/build-push-action@v5
-        with:
-          context: ./scraper-service
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/crm-scraper:latest
-            ghcr.io/${{ github.repository_owner }}/crm-scraper:${{ github.sha }}

@@ -42,12 +42,20 @@ function extractLeadsFromPage() {
         card.querySelector('a[href*="/sales/lead/"]') ||
         card.querySelector('a[href*="/in/"]');
 
+      // Company link from the card — the company name usually links to the
+      // company's Sales Nav / LinkedIn page (used later to find their website).
+      const companyLinkEl =
+        card.querySelector('a[href*="/sales/company/"]') ||
+        card.querySelector('a[href*="/company/"]') ||
+        (companyEl && companyEl.tagName === "A" ? companyEl : null);
+
       return {
         name: nameEl ? nameEl.textContent.trim() : null,
         title: titleEl ? titleEl.textContent.trim() : null,
         company: companyEl ? companyEl.textContent.trim() : null,
         location: locEl ? locEl.textContent.trim() : null,
         profile_url: linkEl ? linkEl.href : null,
+        company_url: companyLinkEl ? companyLinkEl.href : null,
       };
     })
     .filter((l) => l.name);

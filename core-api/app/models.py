@@ -47,17 +47,8 @@ class Lead(Base):
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     status = Column(String, default="new", nullable=False)
     linkedin_url = Column(String, nullable=True)
+    company_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class LinkedInCredential(Base):
-    __tablename__ = "linkedin_credentials"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    cookies_json = Column(Text, nullable=False)
-    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
-    is_active = Column(Boolean, default=True, nullable=False)
 
 
 class ScrapeJob(Base):

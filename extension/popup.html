@@ -63,6 +63,17 @@
 
     <button id="scrapeBtn" disabled>Scrape this search</button>
 
+    <hr style="border:none;border-top:1px solid #8883;margin:16px 0" />
+
+    <div style="font-weight:600;margin-bottom:6px">Autonomous mode</div>
+    <div class="muted" style="margin-bottom:6px">
+      Paste a Sales Navigator search URL — it scrapes in the background, no need to be on the page.
+    </div>
+    <label for="autoUrl">Sales Navigator search URL</label>
+    <textarea id="autoUrl" rows="3" placeholder="https://www.linkedin.com/sales/search/people?query=..."
+      style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #8884;border-radius:6px;background:transparent;color:inherit;font-size:11px;font-family:monospace;resize:none"></textarea>
+    <button id="autoBtn" style="margin-top:8px">Auto-scrape from URL</button>
+
     <div id="status"></div>
 
     <script src="popup.js"></script>

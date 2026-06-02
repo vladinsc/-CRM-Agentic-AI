@@ -23,37 +23,12 @@ services:
     env_file:
       - .env
     environment:
-      - SCRAPER_SERVICE_URL=http://scraper-service:8002
       - ENV=production
     depends_on:
       db:
        condition: service_healthy
       minio:
         condition: service_started
-    networks:
-      - crm-network
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  scraper-service:
-    build:
-      context: ./scraper-service
-      dockerfile: Dockerfile
-    container_name: crm-scraper-service
-    ports:
-      - "8002:8002"
-    environment:
-      - CORE_API_URL=http://core-api:8000
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-      - LINKEDIN_PROFILE_DIR=/data/ff-profile
-    volumes:
-      - linkedin_profile:/data
-    depends_on:
-      - core-api
     networks:
       - crm-network
     restart: unless-stopped
@@ -199,4 +174,3 @@ volumes:
   postgres_data:
   ollama_data:
   minio_data:
-  linkedin_profile:
