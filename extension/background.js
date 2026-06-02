@@ -121,6 +121,13 @@ async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
     const pageResp = await sendToTab(tabId, { type: "SCRAPE_CURRENT_PAGE" });
     let leads = (pageResp && pageResp.leads) || [];
 
+    // Diagnostics: surfaces WHY a page yielded nothing (visible in the service
+    // worker console: chrome://extensions -> "service worker").
+    console.log(
+      `[scrape] page ${page}: leads=${leads.length}` +
+      (pageResp ? ` cardCount=${pageResp.cardCount ?? "?"} reason=${pageResp.reason ?? "ok"} url=${pageResp.url ?? ""}` : " (no response)")
+    );
+
     if (leads.length > 0) {
       leads = await enrichWebsites(leads, websiteCache);
       const result = await apiFetch(`/scraper/ext/jobs/${jobId}/leads`, {

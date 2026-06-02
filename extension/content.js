@@ -168,6 +168,20 @@ function findCompanyWebsite() {
   return external ? external.href : null;
 }
 
+// Sales Nav is a heavy SPA: the page reports "loaded" long before the result
+// cards render. Poll until cards actually appear (or we give up) so we never
+// scrape an empty, still-rendering page.
+async function waitForCards(maxMs = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    if (countCards() > 0) return true;
+    // a checkpoint/login page will never have cards — bail early if detected
+    if (/\/(login|checkpoint|authwall)/.test(location.pathname)) return false;
+    await SLEEP(600);
+  }
+  return countCards() > 0;
+}
+
 // The popup/background drives the scrape one page at a time so it can stream
 // each batch to the API and update progress.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -178,9 +192,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === "SCRAPE_CURRENT_PAGE") {
     (async () => {
+      const appeared = await waitForCards();
+      if (!appeared) {
+        sendResponse({ ok: true, leads: [], reason: "no-cards", url: location.href });
+        return;
+      }
       await scrollToBottom();
       const leads = extractLeadsFromPage();
-      sendResponse({ ok: true, leads });
+      sendResponse({ ok: true, leads, cardCount: countCards() });
     })();
     return true; // async response
   }
