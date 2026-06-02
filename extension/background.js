@@ -149,23 +149,10 @@ async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
   return { jobId, totalMatched, totalRejected };
 }
 
-// Phase 1: scrape the tab the user is already viewing.
-async function runScrape({ tabId, query, maxPages }, onProgress) {
-  const token = await getAuthToken();
-  if (!token) {
-    throw new Error("Not logged in. Open the CRM web app and log in first.");
-  }
-  // Create the job first so an ICP block (400) surfaces before we touch the page.
-  const job = await apiFetch("/scraper/ext/jobs", {
-    method: "POST",
-    body: { query },
-    token,
-  });
-  await ensureContentScript(tabId);
-  return scrapeTabIntoJob({ tabId, jobId: job.id, maxPages, token }, onProgress);
-}
-
-// Phase 2: open a pasted Sales Nav URL in a background tab, scrape it, close it.
+// Open a Sales Nav search URL in a dedicated BACKGROUND tab, scrape it, close it.
+// Runs entirely in the service worker so it survives the popup closing or the
+// user switching tabs. Job status is written to the backend so the CRM panel
+// reflects running/completed/failed without the popup needing to stay open.
 async function runAutoScrape({ url, maxPages }, onProgress) {
   const token = await getAuthToken();
   if (!token) {
@@ -178,13 +165,24 @@ async function runAutoScrape({ url, maxPages }, onProgress) {
     token,
   });
 
-  const tab = await chrome.tabs.create({ url, active: false });
+  let tab;
   try {
+    tab = await chrome.tabs.create({ url, active: false });
     await waitForTabComplete(tab.id);
     await ensureContentScript(tab.id);
     return await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
+  } catch (err) {
+    // Record the failure on the job so the CRM panel shows it.
+    try {
+      await apiFetch(`/scraper/ext/jobs/${job.id}`, {
+        method: "PATCH",
+        body: { status: "failed" },
+        token,
+      });
+    } catch {}
+    throw err;
   } finally {
-    try { await chrome.tabs.remove(tab.id); } catch {}
+    if (tab) { try { await chrome.tabs.remove(tab.id); } catch {} }
   }
 }
 
@@ -206,28 +204,24 @@ function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  const progress = (p) => chrome.runtime.sendMessage({ type: "SCRAPE_PROGRESS", progress: p });
+chrome.runtime.onMessage.addListener((msg) => {
+  // Progress is broadcast best-effort; the popup may be closed (that's fine —
+  // the CRM "Scraping jobs" panel is the source of truth). sendMessage with no
+  // open receiver throws lastError, which we swallow.
+  const progress = (p) => {
+    try {
+      chrome.runtime.sendMessage({ type: "SCRAPE_PROGRESS", progress: p }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {}
+  };
 
-  if (msg.type === "START_SCRAPE") {
-    (async () => {
-      try {
-        sendResponse({ ok: true, result: await runScrape(msg.payload, progress) });
-      } catch (err) {
-        sendResponse({ ok: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
+  // Both buttons use this path: scrape runs to completion in the service worker,
+  // independent of the popup's lifecycle.
   if (msg.type === "START_AUTO_SCRAPE") {
-    (async () => {
-      try {
-        sendResponse({ ok: true, result: await runAutoScrape(msg.payload, progress) });
-      } catch (err) {
-        sendResponse({ ok: false, error: err.message });
-      }
-    })();
-    return true;
+    runAutoScrape(msg.payload, progress).catch((err) =>
+      console.warn("auto-scrape failed:", err.message)
+    );
+    // No async sendResponse — the popup does not wait on us.
   }
 });

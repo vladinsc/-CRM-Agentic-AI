@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { CommandHeader } from "@/components/command-header"
 import { ActivityFeed } from "@/components/activity-feed"
+import { ScrapeJobsPanel } from "@/components/scrape-jobs-panel"
 import { LeadPipeline, type Lead } from "@/components/lead-pipeline"
 import { CopilotSidebar } from "@/components/copilot-sidebar"
 import { cn } from "@/lib/utils"
@@ -26,9 +27,12 @@ export default function AgenticCommandCenter() {
       <CommandHeader onLeadCreated={() => setRefreshTrigger((n) => n + 1)} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Activity Feed */}
+        {/* Left: Activity Feed + Scraping jobs */}
         <aside className="hidden xl:flex w-80 shrink-0 flex-col border-r border-border bg-card overflow-hidden">
-          <ActivityFeed />
+          <div className="flex-1 overflow-hidden">
+            <ActivityFeed />
+          </div>
+          <ScrapeJobsPanel refreshTrigger={refreshTrigger} />
         </aside>
 
         {/* Center: Lead Pipeline — hidden on mobile when copilot is open */}

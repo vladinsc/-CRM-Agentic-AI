@@ -28,61 +28,37 @@ async function init() {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "SCRAPE_PROGRESS") {
-    const { page, totalMatched, totalRejected, lastBatch } = msg.progress;
+// Both buttons kick off a scrape that runs entirely in the SERVICE WORKER using
+// a dedicated background tab. The popup does NOT need to stay open — closing it
+// (or switching tabs) does not stop or reset the scrape. Live progress + final
+// results are visible in the CRM's "Scraping jobs" panel.
+function startScrape(url, maxPages, btn) {
+  if (!SALES_SEARCH_RE.test(url)) {
     statusEl.innerHTML =
-      `<div>Page ${page}: +${lastBatch} found · ` +
-      `<strong>${totalMatched ?? 0}</strong> matched · ${totalRejected ?? 0} skipped</div>`;
-  }
-});
-
-function renderResult(resp, ...btns) {
-  btns.forEach((b) => (b.disabled = false));
-  if (chrome.runtime.lastError) {
-    statusEl.innerHTML = `<div class="err">${chrome.runtime.lastError.message}</div>`;
+      '<div class="err">Open or paste a valid Sales Navigator search URL (linkedin.com/sales/search/…).</div>';
     return;
   }
-  if (resp && resp.ok) {
-    const r = resp.result || {};
-    statusEl.innerHTML =
-      `<div class="ok" style="color:#16a34a"><strong>Done.</strong> ` +
-      `${r.totalMatched ?? r.totalAccepted ?? 0} matched your ICP and were added; ` +
-      `${r.totalRejected ?? 0} didn't match. AI research is running on the matches.</div>`;
-  } else {
-    statusEl.innerHTML = `<div class="err">${(resp && resp.error) || "Scrape failed"}</div>`;
-  }
+  btn.disabled = true;
+  statusEl.innerHTML =
+    '<div class="muted">Scrape started in the background. You can close this popup or switch tabs — ' +
+    "it keeps running. Watch progress in the CRM under <strong>Scraping jobs</strong>.</div>";
+
+  // Fire-and-forget: we do NOT rely on the response callback (it dies when the
+  // popup closes). The service worker owns the whole job from here.
+  chrome.runtime.sendMessage({ type: "START_AUTO_SCRAPE", payload: { url, maxPages } });
+
+  // Re-enable shortly so the user can queue another if they want.
+  setTimeout(() => { btn.disabled = false; }, 2500);
 }
 
 scrapeBtn.addEventListener("click", () => {
   const maxPages = Math.min(10, Math.max(1, parseInt(pagesInput.value) || 1));
-  scrapeBtn.disabled = true;
-  statusEl.innerHTML = '<div class="muted">Starting…</div>';
-
-  chrome.runtime.sendMessage(
-    {
-      type: "START_SCRAPE",
-      payload: { tabId: activeTab.id, query: activeTab.url, maxPages },
-    },
-    (resp) => renderResult(resp, scrapeBtn)
-  );
+  startScrape(activeTab && activeTab.url, maxPages, scrapeBtn);
 });
 
 autoBtn.addEventListener("click", () => {
-  const url = autoUrl.value.trim();
-  if (!SALES_SEARCH_RE.test(url)) {
-    statusEl.innerHTML =
-      '<div class="err">Paste a valid Sales Navigator search URL (linkedin.com/sales/search/…).</div>';
-    return;
-  }
   const maxPages = Math.min(10, Math.max(1, parseInt(pagesInput.value) || 1));
-  autoBtn.disabled = true;
-  statusEl.innerHTML = '<div class="muted">Opening background tab and scraping…</div>';
-
-  chrome.runtime.sendMessage(
-    { type: "START_AUTO_SCRAPE", payload: { url, maxPages } },
-    (resp) => renderResult(resp, autoBtn)
-  );
+  startScrape(autoUrl.value.trim(), maxPages, autoBtn);
 });
 
 init();

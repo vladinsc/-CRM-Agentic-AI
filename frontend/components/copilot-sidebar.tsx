@@ -109,8 +109,14 @@ export function CopilotSidebar({ lead, onClose }: CopilotSidebarProps) {
     }
   }
 
+  const hasRealEmail = !!lead?.email && !lead.email.endsWith("@placeholder.invalid")
+
   const handleEditInGmail = () => {
     if (!lead || !copilot?.draft_message) return
+    if (!hasRealEmail) {
+      toast.error("No email address", { description: "This scraped lead has no email captured." })
+      return
+    }
     const subject = `Following up — ${lead.company}`
     const url = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(lead.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(copilot.draft_message)}`
     window.open(url, "_blank")
@@ -118,6 +124,10 @@ export function CopilotSidebar({ lead, onClose }: CopilotSidebarProps) {
 
   const handleSendEmail = async () => {
     if (!lead) return
+    if (!hasRealEmail) {
+      toast.error("No email address", { description: "This scraped lead has no email captured." })
+      return
+    }
     setSending(true)
     try {
       await api.sendCopilotEmail(Number(lead.id))
@@ -433,11 +443,15 @@ export function CopilotSidebar({ lead, onClose }: CopilotSidebarProps) {
             <div className="space-y-2">
               <div className="flex items-center gap-3 text-sm">
                 <Mail className="size-4 text-muted-foreground" />
-                <span className="text-foreground truncate">{lead.email}</span>
+                <span className="text-foreground truncate">
+                  {lead.email?.endsWith("@placeholder.invalid")
+                    ? "No email captured"
+                    : lead.email}
+                </span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Phone className="size-4 text-muted-foreground" />
-                <span className="text-foreground">{lead.phone}</span>
+                <span className="text-foreground">{lead.phone || "—"}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <User className="size-4 text-muted-foreground" />
