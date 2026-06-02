@@ -96,9 +96,14 @@ async function resolveCompanyWebsite(companyPageUrl) {
   }
 }
 
+// Resolving the real company website means opening each company's page in a
+// tab — slow and focus-disruptive. Off by default; the core scrape stays fast.
+const ENRICH_COMPANY_WEBSITES = false;
+
 // Enrich a batch of leads with their real company website, deduped + cached by
 // the company page URL so each company is visited at most once per job.
 async function enrichWebsites(leads, cache) {
+  if (!ENRICH_COMPANY_WEBSITES) return leads;
   for (const lead of leads) {
     const key = lead.company_url;
     if (!key || !key.includes("/sales/company/")) continue;
@@ -123,6 +128,9 @@ async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
   let lastUrl = "";
   const websiteCache = {};   // company page URL -> real website (or null)
   for (let page = 1; page <= maxPages; page++) {
+    // Keep the tab focused so LinkedIn keeps rendering (background tabs are
+    // throttled and stop loading result cards).
+    try { await chrome.tabs.update(tabId, { active: true }); } catch {}
     const pageResp = await sendToTab(tabId, { type: "SCRAPE_CURRENT_PAGE" });
     let leads = (pageResp && pageResp.leads) || [];
     lastReason = (pageResp && pageResp.reason) || (leads.length ? "ok" : "no-extraction");
@@ -188,7 +196,11 @@ async function runAutoScrape({ url, maxPages }, onProgress) {
   let tab;
   let result;
   try {
-    tab = await chrome.tabs.create({ url, active: false });
+    // Foreground/active: Chrome heavily throttles BACKGROUND tabs (paused
+    // rAF/timers, suspended lazy-loading), so Sales Nav's SPA never renders its
+    // result cards when hidden. An active tab renders normally and scrapes
+    // reliably. We keep nudging it active during the run in case focus is lost.
+    tab = await chrome.tabs.create({ url, active: true });
     await waitForTabComplete(tab.id);
     await ensureContentScript(tab.id);
     result = await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
