@@ -21,8 +21,8 @@ jobs:
         run: pip install ruff
       - name: Run Ruff
         run: |
-          ruff check ./core-api || echo "Ruff a gasit probleme in core-api"
-          ruff check ./ai-service || echo "Ruff a gasit probleme in ai-service"
+          ruff check ./core-api
+          ruff check ./ai-service
   test_core_api:
     name: Test Core API
     needs: lint
@@ -137,11 +137,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lowercase repo owner
+        id: lowercase
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Frontend
@@ -149,24 +154,27 @@ jobs:
         with:
           context: ./frontend
           push: true
+          provenance: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/crm-frontend:latest
-            ghcr.io/${{ github.repository_owner }}/crm-frontend:${{ github.sha }}
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/crm-frontend:latest
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/crm-frontend:${{ github.sha }}
 
       - name: Build and push Core API
         uses: docker/build-push-action@v5
         with:
           context: ./core-api
           push: true
+          provenance: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/crm-core-api:latest
-            ghcr.io/${{ github.repository_owner }}/crm-core-api:${{ github.sha }}
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/crm-core-api:latest
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/crm-core-api:${{ github.sha }}
 
       - name: Build and push AI Service
         uses: docker/build-push-action@v5
         with:
           context: ./ai-service
           push: true
+          provenance: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/crm-ai-service:latest
-            ghcr.io/${{ github.repository_owner }}/crm-ai-service:${{ github.sha }}
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/crm-ai-service:latest
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/crm-ai-service:${{ github.sha }}

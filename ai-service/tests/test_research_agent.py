@@ -295,7 +295,8 @@ class TestRunWithMock:
 # ── Integration tests (necesită Ollama pornit) ────────────────────────────────
 
 def _ollama_available() -> bool:
-    import httpx, os
+    import httpx
+    import os
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     base = ollama_url.replace("/v1", "")
     try:

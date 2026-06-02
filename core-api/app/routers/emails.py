@@ -1,7 +1,6 @@
 import random
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
-from app.database import get_db, SessionLocal
+from fastapi import APIRouter, BackgroundTasks
+from app.database import SessionLocal
 from app.models import Email
 from app.services.s3_service import save_email_to_s3
 from app.services.ai_classifier import classify_incoming_email

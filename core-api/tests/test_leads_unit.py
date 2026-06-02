@@ -5,7 +5,6 @@ Unit tests pentru helper functions din app/routers/leads.py:
 Nu necesită DB sau TestClient.
 """
 
-import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 

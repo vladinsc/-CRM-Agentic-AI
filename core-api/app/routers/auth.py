@@ -1,5 +1,3 @@
-import secrets
-from urllib import response
 from jose import jwt, JWTError
 from fastapi import APIRouter, Depends, HTTPException, Response, BackgroundTasks
 from sqlalchemy.orm import Session

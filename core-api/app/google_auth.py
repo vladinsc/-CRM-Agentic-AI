@@ -1,4 +1,3 @@
-import os
 import json
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
@@ -49,7 +48,7 @@ def get_gmail_service(account: ConnectedAccount):
         root_key = "web" if "web" in client_config else "installed"
         
         if root_key not in client_config:
-            print(f"Eroare: Configurația Google nu are o structură validă.")
+            print("Eroare: Configurația Google nu are o structură validă.")
             return None
 
         # Extragem datele dinamice
@@ -74,7 +73,7 @@ def get_gmail_service(account: ConnectedAccount):
         service = build('gmail', 'v1', credentials=creds)
         return service
     except json.JSONDecodeError:
-        print(f"Eroare: Variabila google_credentials_json nu conține un JSON valid.")
+        print("Eroare: Variabila google_credentials_json nu conține un JSON valid.")
         return None
     except Exception as e:
         print(f"Eroare neprevăzută la crearea serviciului Gmail: {e}")

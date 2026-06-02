@@ -9,6 +9,21 @@ Interfața are 3 coloane:
 
 ---
 
+## MDS 2026 — Development Process Checklist
+
+| # | Cerință barem | Link |
+|---|---|---|
+| A | **2+ agenți AI funcționali** | LeadResearchAgent, CopilotAgent, SearchQueryAgent, EmailClassifier — vezi [Funcționalități](#funcționalități) |
+| B1 | **User stories (min 10) + backlog creat cu AI** | [User Stories](#user-stories) · [Jira Backlog](https://crm-agentic-ai.atlassian.net/jira/software/projects/CRM/boards/35/backlog) |
+| B2 | **Diagrame UML / arhitectură** | [System Architecture Diagrams](#system-architecture-diagrams) |
+| B3 | **Source control: branches, PRs, min 5 commits/student** | [Pull Requests](https://github.com/vladinsc/-CRM-Agentic-AI/pulls?q=is%3Apr+is%3Amerged) · [Commits](https://github.com/vladinsc/-CRM-Agentic-AI/commits/main) |
+| B4 | **Teste automate + evals agenți** | [`core-api/tests/`](./core-api/tests) · [`ai-service/tests/`](./ai-service/tests) |
+| B5 | **Bug report + rezolvare cu PR** | [Issue #16](https://github.com/vladinsc/-CRM-Agentic-AI/issues/16) · [PR #11](https://github.com/vladinsc/-CRM-Agentic-AI/pull/11) |
+| B6 | **Pipeline CI/CD** | [GitHub Actions](https://github.com/vladinsc/-CRM-Agentic-AI/actions) · [`.github/workflows/ci-cd.yml`](./.github/workflows/ci-cd.yml) |
+| B7 | **Raport tooluri AI în dezvoltare** | [`AI_TOOLS_REPORT.md`](./AI_TOOLS_REPORT.md) |
+
+---
+
 ## Funcționalități
 
 - **Autentificare completă** — register, login/logout, verificare email, forgot/reset password
@@ -102,6 +117,28 @@ cd ai-service && python -m pytest tests/ -q
 
 ---
 
+## User Stories
+
+| # | User Story |
+|---|---|
+| 1 | As a sales rep, I want to register with my email and password so that I can access my private CRM workspace |
+| 2 | As a user, I want to reset my password via email so that I can recover access to my account if I forget my credentials |
+| 3 | As a sales rep, I want to import leads from a CSV file so that I can bulk-add prospects without manual entry |
+| 4 | As a sales rep, I want to update a lead's status so that I can track where each prospect is in my pipeline |
+| 5 | As a sales rep, I want the AI to automatically research a new lead and calculate an intent score so that I can prioritize who to contact first |
+| 6 | As a sales rep, I want to see AI agent activity in an auto-updating feed so that I know what research is being done in the background |
+| 7 | As a sales rep, I want the AI to generate a personalized draft email for each lead so that I can send outreach without writing from scratch |
+| 8 | As a sales rep, I want to send the AI-drafted email directly from the CRM so that I don't have to switch to Gmail manually |
+| 9 | As a sales manager, I want to define my Ideal Customer Profile in plain language so that I have a clear reference of who my ideal customer is |
+| 10 | As a sales rep, I want to scrape LinkedIn Sales Navigator search results so that I can automatically import qualified prospects into my CRM |
+| 11 | As a sales rep, I want to use the Chrome extension to scrape LinkedIn leads from my own browser so that I don't need to share my LinkedIn credentials with the server |
+| 12 | As a sales rep, I want the AI to suggest LinkedIn search queries based on my existing leads so that I can find similar high-intent prospects faster |
+| 13 | As a sales rep, I want incoming emails to be automatically classified as leads or noise so that I don't miss potential business opportunities in my inbox |
+| 14 | As a developer, I want every pull request to run automated tests and lint checks so that broken code is caught before it reaches production |
+| 15 | As a user, I want to connect my Google account to the CRM and monitor my Gmail inbox so that I can receive and classify leads without leaving the platform |
+
+---
+
 ## System Architecture Diagrams
 
 ### 1. High-Level Architecture
@@ -121,7 +158,31 @@ graph TD
     API --> Gmail[Gmail API]
 ```
 
-### 2. Class Diagram (Data Models)
+### 2. CI/CD Pipeline
+```mermaid
+graph TD
+    Start([Push / PR to main]) --> Lint[Code Quality: Ruff]
+    
+    Lint --> TestCore[Test Core API]
+    Lint --> TestAI[Test AI Service]
+    Lint --> TestFE[Build Check Frontend]
+
+    TestCore --> BuildCheck{On main branch?}
+    TestAI --> BuildCheck
+    TestFE --> BuildCheck
+
+    BuildCheck -- Yes --> Push[Publish to GHCR]
+    BuildCheck -- No --> End([End Pipeline])
+
+    subgraph "GHCR Images"
+        Push --> ImageFE[crm-frontend]
+        Push --> ImageCore[crm-core-api]
+        Push --> ImageAI[crm-ai-service]
+        Push --> ImageScraper[crm-scraper]
+    end
+```
+
+### 3. Class Diagram (Data Models)
 ```mermaid
 classDiagram
     class User {
@@ -180,7 +241,50 @@ classDiagram
     Lead *-- Email
 ```
 
-### 3. Lead Research Flow
+### 3. User Flow — Main Journey
+```mermaid
+flowchart TD
+    A([Start]) --> B[Register / Login]
+    B --> C{How to add leads?}
+
+    C -->|Manual| D[Fill lead form]
+    C -->|Bulk| E[Import CSV]
+    C -->|LinkedIn| F[LinkedIn Scraper\ndefine search query]
+
+    D --> G[Lead created in pipeline]
+    E --> G
+    F --> G
+
+    G --> H[LeadResearchAgent runs automatically\nextract signals · score intent 0–100]
+    H --> I[Intent Pipeline updated\nlead ranked by score]
+
+    I --> J[Sales rep selects a lead]
+    J --> K[CopilotAgent generates\nwinning argument + draft email]
+    K --> L{Action}
+
+    L -->|Send email| M[Email sent via Gmail]
+    L -->|Adjust & send| N[Edit draft → send]
+    L -->|Skip| O[Move to next lead]
+
+    M --> P([Done])
+    N --> P
+    O --> J
+```
+
+### 4. User Flow — Gmail Email Classification
+```mermaid
+flowchart TD
+    A([New email arrives in Gmail]) --> B[Google Pub/Sub sends webhook\nto Core API]
+    B --> C[Core API fetches email via Gmail API]
+    C --> D[EmailClassifier agent evaluates\nis this a B2B lead or noise?]
+    D --> E{is_worth_saving?}
+    E -->|Yes| F[Store body in MinIO\nSave metadata in PostgreSQL]
+    E -->|No| G[Discard — no action]
+    F --> H[Email visible in CRM inbox]
+    H --> I([Sales rep reviews lead])
+```
+
+### 6. Lead Research Flow (Technical)
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
@@ -204,7 +308,7 @@ sequenceDiagram
     Core-->>UI: 200 OK
 ```
 
-### 4. LinkedIn Scraping Flow
+### 7. LinkedIn Scraping Flow (Technical)
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
@@ -230,7 +334,7 @@ sequenceDiagram
     Core->>DB: Update Status
 ```
 
-### 5. Gmail Integration Flow
+### 8. Gmail Integration Flow (Technical)
 ```mermaid
 sequenceDiagram
     participant PubSub as Google Pub/Sub

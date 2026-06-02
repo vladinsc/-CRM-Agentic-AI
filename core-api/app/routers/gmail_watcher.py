@@ -1,17 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from google_auth_oauthlib.flow import Flow
 from app.database import get_db
 from app.models import ConnectedAccount, User
 #from app.google_auth import get_google_auth_url, SCOPES
-from app.gmail_watch import update_gmail_watch_state, process_gmail_updates
+from app.gmail_watch import update_gmail_watch_state
 from app.auth import get_current_user
 from app.config import settings
-from googleapiclient.discovery import build
-import base64
-import json
 from pydantic import BaseModel
-from typing import Optional
 
 class WatchToggleRequest(BaseModel):
     account_id: int

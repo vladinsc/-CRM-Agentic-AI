@@ -7,12 +7,11 @@ from app.google_auth import get_connected_accounts_by_user_id, get_google_auth_u
 from app.auth import get_current_user
 from app.config import settings
 from app.gmail_watch import process_gmail_updates, stop_gmail_watch
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks
+from fastapi import BackgroundTasks
 from googleapiclient.discovery import build
 import base64
 import json
 from pydantic import BaseModel
-from typing import Optional
 
 class PubSubMessage(BaseModel):
     data: str

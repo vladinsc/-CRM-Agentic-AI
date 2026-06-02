@@ -250,7 +250,6 @@ def _run_research_locked(lead_id: int) -> None:
 
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             from app.models import CopilotResult
-            from datetime import datetime as dt
 
             now = datetime.now(timezone.utc)
             snapshot = {

@@ -7,7 +7,6 @@ from app.database import get_db
 from app.models import User
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from app.config import settings
-from pydantic import EmailStr
 
 
 SECRET_KEY = settings.secret_key

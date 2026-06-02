@@ -1,11 +1,6 @@
 import asyncio
-from google_auth_oauthlib.flow import Flow
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 from app.models import ConnectedAccount, Email
-from app.config import settings
-from app.database import get_db
 from app.database import SessionLocal
 from app.google_auth import get_gmail_service
 from app.services.ai_classifier import classify_incoming_email

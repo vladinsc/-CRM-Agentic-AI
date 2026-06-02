@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, ConfigDict
@@ -56,5 +56,5 @@ def get_active_icp(
 ):
     return db.query(ICPBlueprint).filter(
         ICPBlueprint.user_id == current_user.id,
-        ICPBlueprint.is_active == True
+        ICPBlueprint.is_active == True  # noqa: E712
     ).first()

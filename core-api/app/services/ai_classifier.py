@@ -1,7 +1,6 @@
 import httpx
 import json
 import time
-import os
 import structlog
 from pydantic import BaseModel
 from app.config import settings
