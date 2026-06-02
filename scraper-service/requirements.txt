@@ -1,6 +1,0 @@
-fastapi
-uvicorn[standard]
-playwright==1.44.0
-playwright-stealth==1.0.6
-httpx
-pydantic

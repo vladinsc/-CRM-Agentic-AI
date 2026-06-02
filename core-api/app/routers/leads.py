@@ -9,6 +9,7 @@ import io
 import os
 import logging
 import threading
+from html.parser import HTMLParser
 import httpx
 from app.database import get_db, SessionLocal
 from app.models import Lead, AgentActivity, User
@@ -25,6 +26,63 @@ _ollama_lock = threading.Lock()
 router = APIRouter(prefix="/leads", tags=["leads"])
 
 CURRENCY_SYMBOLS = {"EUR": "€", "USD": "$", "GBP": "£", "RON": "RON "}
+
+
+class _TextExtractor(HTMLParser):
+    """Collect visible text from HTML, skipping script/style/noscript."""
+    _SKIP = {"script", "style", "noscript", "template"}
+
+    def __init__(self):
+        super().__init__()
+        self._skip_depth = 0
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._SKIP:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag):
+        if tag in self._SKIP and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data):
+        if self._skip_depth == 0:
+            text = data.strip()
+            if text:
+                self._chunks.append(text)
+
+    def text(self) -> str:
+        return " ".join(self._chunks)
+
+
+def _fetch_company_website_text(url: Optional[str], max_chars: int = 4000) -> Optional[str]:
+    """
+    Fetch a company website and return stripped visible text (capped). Best-effort:
+    any failure (bad URL, timeout, non-HTML) returns None so research proceeds.
+    """
+    if not url:
+        return None
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    # Skip LinkedIn URLs — those are authwalled and never the real company site.
+    # (The extension resolves the real domain; only unresolved leads keep an li URL.)
+    if "linkedin.com" in url:
+        return None
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True,
+                          headers={"User-Agent": "Mozilla/5.0 (compatible; CRM-Research/1.0)"}) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            ctype = resp.headers.get("content-type", "")
+            if "html" not in ctype:
+                return None
+            parser = _TextExtractor()
+            parser.feed(resp.text)
+            text = " ".join(parser.text().split())
+            return text[:max_chars] if text else None
+    except Exception as e:
+        logger.info(f"Company website fetch skipped for {url}: {e}")
+        return None
 
 
 def _format_deal_value(deal_value: Optional[Decimal], currency: str) -> Optional[str]:
@@ -129,6 +187,10 @@ def _run_research_locked(lead_id: int) -> None:
         if not lead:
             return
 
+        website_text = _fetch_company_website_text(lead.company_url)
+        if website_text:
+            logger.info(f"Fetched company website for lead {lead_id} ({len(website_text)} chars)")
+
         payload = {
             "id": lead.id,
             "name": lead.name,
@@ -137,6 +199,7 @@ def _run_research_locked(lead_id: int) -> None:
             "email": lead.email,
             "deal_value_display": _format_deal_value(lead.deal_value, lead.currency),
             "last_activity_description": lead.last_activity_description,
+            "website_text": website_text,
         }
 
         try:

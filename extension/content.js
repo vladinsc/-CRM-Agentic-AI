@@ -42,12 +42,20 @@ function extractLeadsFromPage() {
         card.querySelector('a[href*="/sales/lead/"]') ||
         card.querySelector('a[href*="/in/"]');
 
+      // Company link from the card — the company name usually links to the
+      // company's Sales Nav / LinkedIn page (used later to find their website).
+      const companyLinkEl =
+        card.querySelector('a[href*="/sales/company/"]') ||
+        card.querySelector('a[href*="/company/"]') ||
+        (companyEl && companyEl.tagName === "A" ? companyEl : null);
+
       return {
         name: nameEl ? nameEl.textContent.trim() : null,
         title: titleEl ? titleEl.textContent.trim() : null,
         company: companyEl ? companyEl.textContent.trim() : null,
         location: locEl ? locEl.textContent.trim() : null,
         profile_url: linkEl ? linkEl.href : null,
+        company_url: companyLinkEl ? companyLinkEl.href : null,
       };
     })
     .filter((l) => l.name);
@@ -76,9 +84,39 @@ function findNextButton() {
   return null;
 }
 
+// On a Sales Nav company page, find the real company website behind the
+// "Visit website" link. Returns the external URL (not a linkedin.com link).
+function findCompanyWebsite() {
+  // 1. Anchors whose visible text is "Visit website".
+  const anchors = [...document.querySelectorAll("a[href]")];
+  const byText = anchors.find((a) =>
+    /visit website/i.test((a.textContent || "").trim())
+  );
+  if (byText && byText.href) return byText.href;
+
+  // 2. Any external (non-linkedin) link in the company top-card / about area.
+  const external = anchors.find((a) => {
+    try {
+      const u = new URL(a.href);
+      return (
+        !u.hostname.endsWith("linkedin.com") &&
+        (u.protocol === "http:" || u.protocol === "https:")
+      );
+    } catch {
+      return false;
+    }
+  });
+  return external ? external.href : null;
+}
+
 // The popup/background drives the scrape one page at a time so it can stream
 // each batch to the API and update progress.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "PING") {
+    sendResponse({ ok: true, ready: true });
+    return true;
+  }
+
   if (msg.type === "SCRAPE_CURRENT_PAGE") {
     (async () => {
       await scrollToBottom();
@@ -86,6 +124,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true, leads });
     })();
     return true; // async response
+  }
+
+  if (msg.type === "GET_COMPANY_WEBSITE") {
+    (async () => {
+      // give the company page a moment to render its top-card
+      await SLEEP(rand(1200, 2200));
+      sendResponse({ ok: true, website: findCompanyWebsite() });
+    })();
+    return true;
   }
 
   if (msg.type === "GO_NEXT_PAGE") {
