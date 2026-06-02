@@ -32,6 +32,7 @@ class ExtJobCreate(BaseModel):
 class ExtJobPatch(BaseModel):
     status: Optional[str] = None
     scraped_count: Optional[int] = None
+    error_message: Optional[str] = None
 
 
 class ScrapeJobResponse(BaseModel):

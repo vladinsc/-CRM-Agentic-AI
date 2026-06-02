@@ -113,19 +113,25 @@ async function enrichWebsites(leads, cache) {
 }
 
 // Drives the page-by-page scrape of an already-prepared tab into an existing job.
+// Returns { totalMatched, totalRejected, totalLeads, lastReason, lastUrl } so the
+// caller can decide whether the run actually worked.
 async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
   let totalMatched = 0;
   let totalRejected = 0;
+  let totalLeads = 0;
+  let lastReason = "ok";
+  let lastUrl = "";
   const websiteCache = {};   // company page URL -> real website (or null)
   for (let page = 1; page <= maxPages; page++) {
     const pageResp = await sendToTab(tabId, { type: "SCRAPE_CURRENT_PAGE" });
     let leads = (pageResp && pageResp.leads) || [];
+    lastReason = (pageResp && pageResp.reason) || (leads.length ? "ok" : "no-extraction");
+    lastUrl = (pageResp && pageResp.url) || "";
+    totalLeads += leads.length;
 
-    // Diagnostics: surfaces WHY a page yielded nothing (visible in the service
-    // worker console: chrome://extensions -> "service worker").
     console.log(
       `[scrape] page ${page}: leads=${leads.length}` +
-      (pageResp ? ` cardCount=${pageResp.cardCount ?? "?"} reason=${pageResp.reason ?? "ok"} url=${pageResp.url ?? ""}` : " (no response)")
+      (pageResp ? ` cardCount=${pageResp.cardCount ?? "?"} reason=${lastReason} url=${lastUrl}` : " (no response)")
     );
 
     if (leads.length > 0) {
@@ -147,13 +153,20 @@ async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
     }
   }
 
-  await apiFetch(`/scraper/ext/jobs/${jobId}`, {
-    method: "PATCH",
-    body: { status: "completed" },
-    token,
-  });
+  // Record the outcome on the job so it's visible in the CRM panel — including a
+  // diagnostic message when nothing was extracted.
+  const patch = totalLeads > 0
+    ? { status: "completed" }
+    : {
+        status: "failed",
+        error_message:
+          lastReason === "no-cards"
+            ? `No results rendered (page may have hit login/checkpoint). URL: ${lastUrl}`
+            : `Found cards but extracted 0 leads — selectors may be outdated. URL: ${lastUrl}`,
+      };
+  await apiFetch(`/scraper/ext/jobs/${jobId}`, { method: "PATCH", body: patch, token });
 
-  return { jobId, totalMatched, totalRejected };
+  return { jobId, totalMatched, totalRejected, totalLeads, lastReason, lastUrl };
 }
 
 // Open a Sales Nav search URL in a dedicated BACKGROUND tab, scrape it, close it.
@@ -173,23 +186,34 @@ async function runAutoScrape({ url, maxPages }, onProgress) {
   });
 
   let tab;
+  let result;
   try {
     tab = await chrome.tabs.create({ url, active: false });
     await waitForTabComplete(tab.id);
     await ensureContentScript(tab.id);
-    return await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
+    result = await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
+    return result;
   } catch (err) {
-    // Record the failure on the job so the CRM panel shows it.
     try {
       await apiFetch(`/scraper/ext/jobs/${job.id}`, {
         method: "PATCH",
-        body: { status: "failed" },
+        body: { status: "failed", error_message: String(err.message || err) },
         token,
       });
     } catch {}
     throw err;
   } finally {
-    if (tab) { try { await chrome.tabs.remove(tab.id); } catch {} }
+    // If nothing was scraped, KEEP the tab open and bring it forward so you can
+    // see what LinkedIn actually showed (login wall, empty results, etc.).
+    // Otherwise close it as usual.
+    if (tab) {
+      const gotLeads = result && result.totalLeads > 0;
+      if (gotLeads) {
+        try { await chrome.tabs.remove(tab.id); } catch {}
+      } else {
+        try { await chrome.tabs.update(tab.id, { active: true }); } catch {}
+      }
+    }
   }
 }
 
