@@ -44,30 +44,85 @@ function sendToTab(tabId, message) {
   });
 }
 
-// Guarantees the content script is present in the tab before we message it.
-// (Manifest injection only happens on page loads AFTER the extension is
-// installed, so an already-open Sales Nav tab would have no receiver.)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Try to message a tab once, resolving null instead of rejecting on "no receiver".
+function tryPing(tabId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(tabId, { type: "PING" }, (resp) => {
+        if (chrome.runtime.lastError) resolve(null);
+        else resolve(resp);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// Inject content.js and wait until it actually responds to a PING, so we never
+// send a real message before its onMessage listener is registered. content.js
+// is injected ONLY here (no manifest content_scripts), avoiding any race.
 async function ensureContentScript(tabId) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"],
-    });
-  } catch (e) {
-    // If it's already injected, a duplicate injection may throw — that's fine.
-    console.warn("ensureContentScript:", e.message);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    } catch (e) {
+      console.warn("ensureContentScript inject:", e.message);
+    }
+    const pong = await tryPing(tabId);
+    if (pong && pong.ready) return;
+    await sleep(600);
   }
+  throw new Error("Content script did not become ready in the tab.");
+}
+
+// Visit a Sales Nav company page in a background tab and read its real
+// "Visit website" URL. Returns null on any failure (best-effort enrichment).
+async function resolveCompanyWebsite(companyPageUrl) {
+  if (!companyPageUrl || !companyPageUrl.includes("/sales/company/")) return null;
+  let tab;
+  try {
+    tab = await chrome.tabs.create({ url: companyPageUrl, active: false });
+    await waitForTabComplete(tab.id);
+    await ensureContentScript(tab.id);
+    const resp = await sendToTab(tab.id, { type: "GET_COMPANY_WEBSITE" });
+    return (resp && resp.website) || null;
+  } catch (e) {
+    console.warn("resolveCompanyWebsite failed:", e.message);
+    return null;
+  } finally {
+    if (tab) { try { await chrome.tabs.remove(tab.id); } catch {} }
+  }
+}
+
+// Enrich a batch of leads with their real company website, deduped + cached by
+// the company page URL so each company is visited at most once per job.
+async function enrichWebsites(leads, cache) {
+  for (const lead of leads) {
+    const key = lead.company_url;
+    if (!key || !key.includes("/sales/company/")) continue;
+    if (!(key in cache)) {
+      cache[key] = await resolveCompanyWebsite(key);
+    }
+    // Replace the LinkedIn company-page URL with the real website (if found),
+    // so the server-side research fetch hits a real, fetchable domain.
+    if (cache[key]) lead.company_url = cache[key];
+  }
+  return leads;
 }
 
 // Drives the page-by-page scrape of an already-prepared tab into an existing job.
 async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
   let totalMatched = 0;
   let totalRejected = 0;
+  const websiteCache = {};   // company page URL -> real website (or null)
   for (let page = 1; page <= maxPages; page++) {
     const pageResp = await sendToTab(tabId, { type: "SCRAPE_CURRENT_PAGE" });
-    const leads = (pageResp && pageResp.leads) || [];
+    let leads = (pageResp && pageResp.leads) || [];
 
     if (leads.length > 0) {
+      leads = await enrichWebsites(leads, websiteCache);
       const result = await apiFetch(`/scraper/ext/jobs/${jobId}/leads`, {
         method: "POST",
         body: { leads },

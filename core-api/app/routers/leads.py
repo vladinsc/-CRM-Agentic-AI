@@ -64,6 +64,10 @@ def _fetch_company_website_text(url: Optional[str], max_chars: int = 4000) -> Op
         return None
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    # Skip LinkedIn URLs — those are authwalled and never the real company site.
+    # (The extension resolves the real domain; only unresolved leads keep an li URL.)
+    if "linkedin.com" in url:
+        return None
     try:
         with httpx.Client(timeout=10.0, follow_redirects=True,
                           headers={"User-Agent": "Mozilla/5.0 (compatible; CRM-Research/1.0)"}) as client:
