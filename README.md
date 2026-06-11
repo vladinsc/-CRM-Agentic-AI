@@ -1,5 +1,5 @@
 # CRM Agentic AI
-
+# Demo -> https://youtu.be/N_b_pXKzs0w
 Un CRM cu agenți AI care analizează lead-uri în timp real, calculează scorul de intenție și generează sugestii personalizate pentru vânzători.
 
 Interfața are 3 coloane:
