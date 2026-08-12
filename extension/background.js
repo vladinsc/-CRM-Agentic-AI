@@ -96,9 +96,14 @@ async function resolveCompanyWebsite(companyPageUrl) {
   }
 }
 
+// Resolving the real company website means opening each company's page in a
+// tab — slow and focus-disruptive. Off by default; the core scrape stays fast.
+const ENRICH_COMPANY_WEBSITES = false;
+
 // Enrich a batch of leads with their real company website, deduped + cached by
 // the company page URL so each company is visited at most once per job.
 async function enrichWebsites(leads, cache) {
+  if (!ENRICH_COMPANY_WEBSITES) return leads;
   for (const lead of leads) {
     const key = lead.company_url;
     if (!key || !key.includes("/sales/company/")) continue;
@@ -113,13 +118,29 @@ async function enrichWebsites(leads, cache) {
 }
 
 // Drives the page-by-page scrape of an already-prepared tab into an existing job.
+// Returns { totalMatched, totalRejected, totalLeads, lastReason, lastUrl } so the
+// caller can decide whether the run actually worked.
 async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
   let totalMatched = 0;
   let totalRejected = 0;
+  let totalLeads = 0;
+  let lastReason = "ok";
+  let lastUrl = "";
   const websiteCache = {};   // company page URL -> real website (or null)
   for (let page = 1; page <= maxPages; page++) {
+    // Keep the tab focused so LinkedIn keeps rendering (background tabs are
+    // throttled and stop loading result cards).
+    try { await chrome.tabs.update(tabId, { active: true }); } catch {}
     const pageResp = await sendToTab(tabId, { type: "SCRAPE_CURRENT_PAGE" });
     let leads = (pageResp && pageResp.leads) || [];
+    lastReason = (pageResp && pageResp.reason) || (leads.length ? "ok" : "no-extraction");
+    lastUrl = (pageResp && pageResp.url) || "";
+    totalLeads += leads.length;
+
+    console.log(
+      `[scrape] page ${page}: leads=${leads.length}` +
+      (pageResp ? ` cardCount=${pageResp.cardCount ?? "?"} reason=${lastReason} url=${lastUrl}` : " (no response)")
+    );
 
     if (leads.length > 0) {
       leads = await enrichWebsites(leads, websiteCache);
@@ -140,32 +161,26 @@ async function scrapeTabIntoJob({ tabId, jobId, maxPages, token }, onProgress) {
     }
   }
 
-  await apiFetch(`/scraper/ext/jobs/${jobId}`, {
-    method: "PATCH",
-    body: { status: "completed" },
-    token,
-  });
+  // Record the outcome on the job so it's visible in the CRM panel — including a
+  // diagnostic message when nothing was extracted.
+  const patch = totalLeads > 0
+    ? { status: "completed" }
+    : {
+        status: "failed",
+        error_message:
+          lastReason === "no-cards"
+            ? `No results rendered (page may have hit login/checkpoint). URL: ${lastUrl}`
+            : `Found cards but extracted 0 leads — selectors may be outdated. URL: ${lastUrl}`,
+      };
+  await apiFetch(`/scraper/ext/jobs/${jobId}`, { method: "PATCH", body: patch, token });
 
-  return { jobId, totalMatched, totalRejected };
+  return { jobId, totalMatched, totalRejected, totalLeads, lastReason, lastUrl };
 }
 
-// Phase 1: scrape the tab the user is already viewing.
-async function runScrape({ tabId, query, maxPages }, onProgress) {
-  const token = await getAuthToken();
-  if (!token) {
-    throw new Error("Not logged in. Open the CRM web app and log in first.");
-  }
-  // Create the job first so an ICP block (400) surfaces before we touch the page.
-  const job = await apiFetch("/scraper/ext/jobs", {
-    method: "POST",
-    body: { query },
-    token,
-  });
-  await ensureContentScript(tabId);
-  return scrapeTabIntoJob({ tabId, jobId: job.id, maxPages, token }, onProgress);
-}
-
-// Phase 2: open a pasted Sales Nav URL in a background tab, scrape it, close it.
+// Open a Sales Nav search URL in a dedicated BACKGROUND tab, scrape it, close it.
+// Runs entirely in the service worker so it survives the popup closing or the
+// user switching tabs. Job status is written to the backend so the CRM panel
+// reflects running/completed/failed without the popup needing to stay open.
 async function runAutoScrape({ url, maxPages }, onProgress) {
   const token = await getAuthToken();
   if (!token) {
@@ -178,13 +193,39 @@ async function runAutoScrape({ url, maxPages }, onProgress) {
     token,
   });
 
-  const tab = await chrome.tabs.create({ url, active: false });
+  let tab;
+  let result;
   try {
+    // Foreground/active: Chrome heavily throttles BACKGROUND tabs (paused
+    // rAF/timers, suspended lazy-loading), so Sales Nav's SPA never renders its
+    // result cards when hidden. An active tab renders normally and scrapes
+    // reliably. We keep nudging it active during the run in case focus is lost.
+    tab = await chrome.tabs.create({ url, active: true });
     await waitForTabComplete(tab.id);
     await ensureContentScript(tab.id);
-    return await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
+    result = await scrapeTabIntoJob({ tabId: tab.id, jobId: job.id, maxPages, token }, onProgress);
+    return result;
+  } catch (err) {
+    try {
+      await apiFetch(`/scraper/ext/jobs/${job.id}`, {
+        method: "PATCH",
+        body: { status: "failed", error_message: String(err.message || err) },
+        token,
+      });
+    } catch {}
+    throw err;
   } finally {
-    try { await chrome.tabs.remove(tab.id); } catch {}
+    // If nothing was scraped, KEEP the tab open and bring it forward so you can
+    // see what LinkedIn actually showed (login wall, empty results, etc.).
+    // Otherwise close it as usual.
+    if (tab) {
+      const gotLeads = result && result.totalLeads > 0;
+      if (gotLeads) {
+        try { await chrome.tabs.remove(tab.id); } catch {}
+      } else {
+        try { await chrome.tabs.update(tab.id, { active: true }); } catch {}
+      }
+    }
   }
 }
 
@@ -206,28 +247,24 @@ function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  const progress = (p) => chrome.runtime.sendMessage({ type: "SCRAPE_PROGRESS", progress: p });
+chrome.runtime.onMessage.addListener((msg) => {
+  // Progress is broadcast best-effort; the popup may be closed (that's fine —
+  // the CRM "Scraping jobs" panel is the source of truth). sendMessage with no
+  // open receiver throws lastError, which we swallow.
+  const progress = (p) => {
+    try {
+      chrome.runtime.sendMessage({ type: "SCRAPE_PROGRESS", progress: p }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {}
+  };
 
-  if (msg.type === "START_SCRAPE") {
-    (async () => {
-      try {
-        sendResponse({ ok: true, result: await runScrape(msg.payload, progress) });
-      } catch (err) {
-        sendResponse({ ok: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
+  // Both buttons use this path: scrape runs to completion in the service worker,
+  // independent of the popup's lifecycle.
   if (msg.type === "START_AUTO_SCRAPE") {
-    (async () => {
-      try {
-        sendResponse({ ok: true, result: await runAutoScrape(msg.payload, progress) });
-      } catch (err) {
-        sendResponse({ ok: false, error: err.message });
-      }
-    })();
-    return true;
+    runAutoScrape(msg.payload, progress).catch((err) =>
+      console.warn("auto-scrape failed:", err.message)
+    );
+    // No async sendResponse — the popup does not wait on us.
   }
 });

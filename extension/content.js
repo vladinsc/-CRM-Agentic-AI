@@ -12,23 +12,46 @@ if (window.__crmScraperInjected) {
 const SLEEP = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (min, max) => Math.floor(Math.random() * (max - min) + min);
 
-function extractLeadsFromPage() {
+function getCards() {
   const cardSelectors = [
     '[data-view-name="search-results-lead-result-item"]',
     ".search-results__result-item",
     "li.artdeco-list__item",
   ];
-  let cards = [];
   for (const sel of cardSelectors) {
-    cards = [...document.querySelectorAll(sel)];
-    if (cards.length > 0) break;
+    const found = [...document.querySelectorAll(sel)];
+    if (found.length > 0) return found;
   }
+
+  // Structural fallback (resilient to LinkedIn class/attr changes): every result
+  // row contains a link to /sales/lead/. Walk up to the row container.
+  const leadLinks = [...document.querySelectorAll('a[href*="/sales/lead/"]')];
+  const rows = new Set();
+  for (const a of leadLinks) {
+    let el = a;
+    for (let i = 0; i < 6 && el && el !== document.body; i++) {
+      if (el.tagName === "LI" || el.getAttribute("role") === "listitem") break;
+      el = el.parentElement;
+    }
+    if (el && el !== document.body) rows.add(el);
+  }
+  return [...rows];
+}
+
+function extractLeadsFromPage() {
+  const cards = getCards();
 
   return cards
     .map((card) => {
+      const leadLink =
+        card.querySelector('a[href*="/sales/lead/"]') ||
+        card.querySelector('a[href*="/in/"]');
+
       const nameEl =
         card.querySelector('[data-anonymize="person-name"]') ||
-        card.querySelector(".result-lockup__name a");
+        card.querySelector(".result-lockup__name a") ||
+        leadLink;   // the lead link's text is the person's name
+
       const titleEl =
         card.querySelector('[data-anonymize="title"]') ||
         card.querySelector(".result-lockup__highlight-keyword");
@@ -38,36 +61,72 @@ function extractLeadsFromPage() {
       const locEl =
         card.querySelector('[data-anonymize="location"]') ||
         card.querySelector(".result-lockup__misc-item");
-      const linkEl =
-        card.querySelector('a[href*="/sales/lead/"]') ||
-        card.querySelector('a[href*="/in/"]');
 
-      // Company link from the card — the company name usually links to the
-      // company's Sales Nav / LinkedIn page (used later to find their website).
       const companyLinkEl =
         card.querySelector('a[href*="/sales/company/"]') ||
         card.querySelector('a[href*="/company/"]') ||
         (companyEl && companyEl.tagName === "A" ? companyEl : null);
 
+      const clean = (el) => (el ? el.textContent.replace(/\s+/g, " ").trim() : null);
+
       return {
-        name: nameEl ? nameEl.textContent.trim() : null,
-        title: titleEl ? titleEl.textContent.trim() : null,
-        company: companyEl ? companyEl.textContent.trim() : null,
-        location: locEl ? locEl.textContent.trim() : null,
-        profile_url: linkEl ? linkEl.href : null,
+        name: clean(nameEl),
+        title: clean(titleEl),
+        company: clean(companyEl),
+        location: clean(locEl),
+        profile_url: leadLink ? leadLink.href : null,
         company_url: companyLinkEl ? companyLinkEl.href : null,
       };
     })
     .filter((l) => l.name);
 }
 
-async function scrollToBottom() {
-  // Sales Nav lazy-loads result cards as you scroll; nudge the list to render all.
-  for (let i = 0; i < 6; i++) {
-    window.scrollBy(0, document.body.scrollHeight / 6);
-    await SLEEP(rand(400, 800));
+function countCards() {
+  return getCards().length;
+}
+
+// Find the actual scrollable results container. Sales Nav renders results in an
+// INNER scroll region, not the window — scrolling window alone loads nothing.
+function findScrollContainer() {
+  const firstCard =
+    document.querySelector('[data-view-name="search-results-lead-result-item"]') ||
+    document.querySelector(".search-results__result-item") ||
+    document.querySelector("li.artdeco-list__item");
+  let el = firstCard ? firstCard.parentElement : null;
+  while (el && el !== document.body) {
+    const style = getComputedStyle(el);
+    if (
+      (style.overflowY === "auto" || style.overflowY === "scroll") &&
+      el.scrollHeight > el.clientHeight + 50
+    ) {
+      return el;
+    }
+    el = el.parentElement;
   }
-  window.scrollTo(0, 0);
+  return null;
+}
+
+// Sales Nav lazy-loads/virtualizes cards as the inner list scrolls. Scroll it
+// step by step until the card count stops growing (all ~25 rendered).
+async function scrollToBottom() {
+  const container = findScrollContainer();
+  const scrollEl = container || document.scrollingElement || document.documentElement;
+
+  let lastCount = -1;
+  let stable = 0;
+  for (let i = 0; i < 30 && stable < 3; i++) {
+    scrollEl.scrollBy(0, Math.max(600, scrollEl.clientHeight * 0.8));
+    await SLEEP(rand(500, 900));
+    const count = countCards();
+    if (count === lastCount) {
+      stable++;
+    } else {
+      stable = 0;
+      lastCount = count;
+    }
+  }
+  // Back to top so pagination/Next is reachable and the page looks normal.
+  scrollEl.scrollTo({ top: 0 });
   await SLEEP(rand(500, 900));
 }
 
@@ -109,6 +168,20 @@ function findCompanyWebsite() {
   return external ? external.href : null;
 }
 
+// Sales Nav is a heavy SPA: the page reports "loaded" long before the result
+// cards render. Poll until cards actually appear (or we give up) so we never
+// scrape an empty, still-rendering page.
+async function waitForCards(maxMs = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    if (countCards() > 0) return true;
+    // a checkpoint/login page will never have cards — bail early if detected
+    if (/\/(login|checkpoint|authwall)/.test(location.pathname)) return false;
+    await SLEEP(600);
+  }
+  return countCards() > 0;
+}
+
 // The popup/background drives the scrape one page at a time so it can stream
 // each batch to the API and update progress.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -119,9 +192,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === "SCRAPE_CURRENT_PAGE") {
     (async () => {
+      const appeared = await waitForCards();
+      if (!appeared) {
+        sendResponse({ ok: true, leads: [], reason: "no-cards", url: location.href });
+        return;
+      }
       await scrollToBottom();
       const leads = extractLeadsFromPage();
-      sendResponse({ ok: true, leads });
+      sendResponse({ ok: true, leads, cardCount: countCards() });
     })();
     return true; // async response
   }

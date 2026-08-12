@@ -311,10 +311,18 @@ def list_leads(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all leads assigned to the current user, sorted by intent_score DESC."""
+    """
+    List active leads for the current user, sorted by intent_score DESC.
+    Excludes scraped leads still awaiting ICP-matching (pending_icp) and those
+    that did not match the ICP (rejected_icp) — those are surfaced via the
+    scraping-jobs panel, not the active pipeline.
+    """
     leads = (
         db.query(Lead)
-        .filter(Lead.assigned_to == current_user.id)
+        .filter(
+            Lead.assigned_to == current_user.id,
+            Lead.status.notin_(["pending_icp", "rejected_icp"]),
+        )
         .order_by(Lead.intent_score.desc().nulls_last())
         .all()
     )
